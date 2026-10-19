@@ -1,0 +1,152 @@
+// Feature registry (see docs/CHECKLIST.md) and the settings editor.
+// 'ok' = implemented and can be toggled; 'planned' = shown disabled until it is built.
+import { h } from './dom.ts';
+
+type Status = 'ok' | 'planned';
+type Setting = [group: string, key: string, desc: string, type: 'string' | 'number' | 'boolean' | string[], def: string | number | boolean];
+export type Settings = Record<string, unknown> & { features: Record<string, boolean> };
+
+const LIST: [string, [id: string, label: string, status: Status][]][] = [
+  ['Inteligência de código', [
+    ['completion', 'Autocompletar (métodos, constantes, require)', 'ok'],
+    ['hover', 'Documentação ao passar o mouse', 'ok'],
+    ['signatureHelp', 'Assinatura do método ao digitar argumentos', 'ok'],
+    ['definition', 'Ir para definição (Ctrl+Clique / F12)', 'ok'],
+    ['references', 'Encontrar usos (Shift+F12)', 'ok'],
+    ['documentHighlight', 'Destacar ocorrências do símbolo', 'ok'],
+    ['documentSymbols', 'Estrutura do arquivo e Ctrl+Shift+O', 'ok'],
+    ['workspaceSymbols', 'Buscar símbolo no projeto (Ctrl+T)', 'ok'],
+    ['inlayHints', 'Inlay hints de tipos e parâmetros', 'planned'],
+    ['semanticHighlighting', 'Realce semântico', 'planned'],
+    ['typeHierarchy', 'Hierarquia de tipos e chamadas', 'planned'],
+  ]],
+  ['Qualidade e refatoração', [
+    ['diagnostics', 'Diagnósticos em tempo real (sintaxe + RuboCop)', 'ok'],
+    ['codeActions', 'Quick-fixes e refatorações (Ctrl+.)', 'ok'],
+    ['formatting', 'Formatar documento (Shift+Alt+F)', 'ok'],
+    ['rename', 'Renomear símbolo (F2)', 'ok'],
+    ['intentions', 'Ações no código: do↔{}, hash rocket, ternário…', 'planned'],
+    ['inspections', 'Inspeções extras (nil, tipos, Rails, RSpec, YARD)', 'planned'],
+    ['generate', 'Gerar attr_accessor, construtor, let do RSpec', 'planned'],
+    ['railsRename', 'Rename que entende Rails (model/controller/view)', 'planned'],
+  ]],
+  ['Executar e testar', [
+    ['runFile', 'Executar arquivo Ruby (Ctrl+F5)', 'ok'],
+    ['runTests', 'Executar testes RSpec / Minitest do arquivo ou da linha', 'ok'],
+    ['gotoTest', 'Ir para teste ↔ implementação (Ctrl+Shift+T)', 'ok'],
+    ['debugger', 'Depurador (rdbg / DAP) com breakpoints', 'planned'],
+    ['testTree', 'Árvore de testes com rerun de falhas', 'planned'],
+    ['coverage', 'Cobertura de código', 'planned'],
+    ['profiler', 'Profiler', 'planned'],
+    ['console', 'Console IRB / Pry / Rails', 'planned'],
+    ['terminal', 'Terminal integrado', 'planned'],
+  ]],
+  ['Ecossistema Ruby', [
+    ['bundler', 'Bundler: install, update, outdated, lock, clean', 'ok'],
+    ['rake', 'Listar e executar tarefas Rake', 'ok'],
+    ['sdk', 'Detectar versão do Ruby e .ruby-version', 'ok'],
+    ['versionManagers', 'rbenv / rvm / asdf / chruby / mise', 'planned'],
+    ['gemsView', 'Lista de gems com navegação para o código', 'planned'],
+    ['rbs', 'RBS e Steep (assinaturas de tipo)', 'planned'],
+  ]],
+  ['Rails', [
+    ['railsNav', 'Navegar Model ↔ Controller ↔ View ↔ Helper', 'planned'],
+    ['railsGenerators', 'Executar generators', 'planned'],
+    ['railsRoutes', 'Rotas, i18n e schema', 'planned'],
+  ]],
+  ['Ferramentas', [
+    ['git', 'Git: status, diff, commit, blame', 'planned'],
+    ['httpClient', 'Cliente HTTP', 'planned'],
+    ['database', 'Ferramentas de banco de dados', 'planned'],
+  ]],
+];
+
+const SETTINGS: Setting[] = [
+  ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
+  ['Ruby', 'ruby.lspPath', 'Comando do servidor Ruby LSP (gem install ruby-lsp).', 'string', 'ruby-lsp'],
+  ['Ruby', 'test.framework', 'Framework de testes.', ['auto', 'rspec', 'minitest'], 'auto'],
+  ['Editor', 'editor.fontSize', 'Tamanho da fonte.', 'number', 14],
+  ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
+  ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],
+  ['Editor', 'editor.minimap', 'Mostrar minimapa.', 'boolean', true],
+  ['Editor', 'editor.wordWrap', 'Quebrar linhas longas.', 'boolean', false],
+];
+
+function defaults(): Settings {
+  const s: Settings = { features: {} };
+  for (const [, key, , , def] of SETTINGS) s[key] = def;
+  for (const [, items] of LIST) for (const [id, , status] of items) s.features[id] = status === 'ok';
+  return s;
+}
+
+let settings = defaults();
+
+export function load(saved: Record<string, unknown>): Settings {
+  const d = defaults();
+  settings = { ...d, ...saved, features: { ...d.features, ...(saved.features as Record<string, boolean> | undefined) } };
+  return settings;
+}
+
+export const get = <T>(key: string) => settings[key] as T;
+export const set = (key: string, value: unknown) => { settings[key] = value; };
+export const on = (id: string) => !!settings.features[id];
+export const all = () => settings;
+
+function controlFor(key: string, type: Setting[3], changed: (key: string, value: unknown) => void): HTMLElement {
+  if (type === 'boolean') {
+    const box = h('input', { type: 'checkbox', checked: settings[key] as boolean });
+    box.onchange = () => { changed(key, box.checked); };
+    return box;
+  }
+  if (Array.isArray(type)) {
+    const select = h('select', { className: 'input' }, ...type.map(o => h('option', { value: o, selected: settings[key] === o }, o)));
+    select.onchange = () => { changed(key, select.value); };
+    return select;
+  }
+  const input = h('input', { className: 'input', type: type === 'number' ? 'number' : 'text', value: String(settings[key]) });
+  input.onchange = () => {
+    const v = type === 'number' ? Number(input.value) : input.value.trim();
+    // Empty or zero would make the editor unusable (font size 0); keep the last good value.
+    if (type === 'number' ? !(Number(v) > 0) : !v) { input.value = String(settings[key]); return; }
+    changed(key, v);
+  };
+  return input;
+}
+
+export function render(container: HTMLElement, onChange: (key: string) => void) {
+  const filter = h('input', { className: 'input settings-search', placeholder: 'Pesquisar configurações' });
+  const body = h('div', { className: 'settings-body' });
+  const row = (title: string, desc: string, control: HTMLElement, extra = '') => {
+    const el = h('div', { className: 'setting ' + extra }, h('div', { className: 'setting-title' }, title), h('div', { className: 'setting-desc' }, desc), control);
+    el.dataset.text = (title + ' ' + desc).toLowerCase();
+    return el;
+  };
+  const changed = (key: string, value: unknown) => { settings[key] = value; onChange(key); };
+
+  let lastGroup = '';
+  for (const [group, key, desc, type] of SETTINGS) {
+    if (group !== lastGroup) body.append(h('h2', {}, group));
+    lastGroup = group;
+    body.append(row(key, desc, controlFor(key, type, changed)));
+  }
+
+  body.append(h('h2', {}, 'Funcionalidades'));
+  body.append(h('p', { className: 'setting-desc' }, 'Suporte Ruby inspirado no RubyMine. Itens "planejado" estão no checklist e serão habilitados conforme forem implementados.'));
+  for (const [group, items] of LIST) {
+    body.append(h('h3', {}, group));
+    for (const [id, label, status] of items) {
+      const box = h('input', { type: 'checkbox', checked: on(id), disabled: status !== 'ok' });
+      box.onchange = () => { settings.features[id] = box.checked; onChange('features.' + id); };
+      const kids: (Node | string)[] = [box, ' Habilitado'];
+      if (status !== 'ok') kids.push(' ', h('span', { className: 'pill' }, 'planejado'));
+      body.append(row(label, `features.${id}`, h('label', { className: 'feature' }, ...kids), status));
+    }
+  }
+
+  filter.oninput = () => {
+    const q = filter.value.toLowerCase();
+    body.querySelectorAll<HTMLElement>('.setting').forEach(el => { el.hidden = !el.dataset.text!.includes(q); });
+  };
+  container.replaceChildren(h('div', { className: 'settings-page' }, filter, body));
+  filter.focus();
+}

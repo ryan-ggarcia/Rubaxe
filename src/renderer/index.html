@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; worker-src 'self' blob:">
+  <title>Rubaxe</title>
+  <link rel="stylesheet" href="../../node_modules/@vscode/codicons/dist/codicon.css">
+  <link rel="stylesheet" href="../../node_modules/monaco-editor/min/vs/editor/editor.main.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="titlebar">
+    <div id="command-center" title="Ir para arquivo (Ctrl+P)">
+      <span class="codicon codicon-search"></span><span id="command-center-label">Rubaxe</span>
+    </div>
+  </header>
+
+  <div id="main">
+    <nav id="activitybar">
+      <div class="ab-item" data-view="explorer" title="Explorer (Ctrl+Shift+E)"><span class="codicon codicon-files"></span></div>
+      <div class="ab-item" data-view="search" title="Pesquisar (Ctrl+Shift+F)"><span class="codicon codicon-search"></span></div>
+      <div class="ab-item" data-view="ruby" title="Ruby"><span class="codicon codicon-ruby"></span></div>
+      <div class="ab-spacer"></div>
+      <div class="ab-item" id="ab-settings" title="Configurações (Ctrl+,)"><span class="codicon codicon-settings-gear"></span></div>
+    </nav>
+
+    <aside id="sidebar">
+      <section class="view" id="view-explorer">
+        <div class="view-header"><span id="explorer-title">EXPLORER</span><span class="view-actions" id="explorer-actions"></span></div>
+        <div class="view-body" id="explorer-tree"></div>
+        <div class="empty" id="explorer-empty">
+          <p>Nenhuma pasta aberta.</p>
+          <button class="button" id="explorer-empty-open">Abrir pasta</button>
+        </div>
+        <div class="section-header" id="outline-header"><span class="codicon codicon-chevron-down"></span>ESTRUTURA</div>
+        <div class="view-body outline" id="outline"></div>
+      </section>
+      <section class="view" id="view-search" hidden>
+        <div class="view-header"><span>PESQUISAR</span></div>
+        <div class="search-box">
+          <input class="input" id="search-input" placeholder="Pesquisar (Enter)" spellcheck="false">
+          <span class="codicon codicon-case-sensitive toggle" id="search-case" title="Diferenciar maiúsculas"></span>
+          <span class="codicon codicon-regex toggle" id="search-regex" title="Expressão regular"></span>
+        </div>
+        <div class="view-body" id="search-results"></div>
+      </section>
+      <section class="view" id="view-ruby" hidden>
+        <div class="view-header"><span>RUBY</span></div>
+        <div class="view-body" id="ruby-body"></div>
+      </section>
+    </aside>
+    <div class="sash vertical" id="sash-side"></div>
+
+    <div id="workbench">
+      <div id="tabs"></div>
+      <div id="editor-area">
+        <div id="editor" hidden></div>
+        <div id="settings-page" hidden></div>
+        <div id="welcome"></div>
+      </div>
+      <div class="sash horizontal" id="sash-panel"></div>
+      <section id="panel">
+        <div class="panel-header">
+          <div class="panel-tab" data-panel="problems">PROBLEMAS <span class="badge" id="problems-count"></span></div>
+          <div class="panel-tab" data-panel="output">SAÍDA</div>
+          <span class="spacer"></span>
+          <span class="codicon codicon-debug-stop disabled" id="panel-stop" title="Parar (Ctrl+F2)"></span>
+          <span class="codicon codicon-clear-all" id="panel-clear" title="Limpar saída"></span>
+          <span class="codicon codicon-close" id="panel-close" title="Fechar painel (Ctrl+J)"></span>
+        </div>
+        <div class="panel-body" id="panel-problems"></div>
+        <pre class="panel-body" id="panel-output" hidden></pre>
+      </section>
+    </div>
+  </div>
+
+  <footer id="statusbar"><div id="sb-left"></div><div id="sb-right"></div></footer>
+  <div id="quick-input" hidden></div>
+  <div id="toasts"></div>
+
+  <script src="../../node_modules/monaco-editor/min/vs/loader.js"></script>
+  <script src="../../dist/renderer.js"></script>
+</body>
+</html>
