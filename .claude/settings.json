@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/gate-agents.js",
+            "statusMessage": "Verificando palavra-chave do agente"
+          }
+        ]
+      }
+    ]
+  }
+}
