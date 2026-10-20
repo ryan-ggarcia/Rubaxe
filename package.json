@@ -53,8 +53,21 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Rubaxe-Setup-${version}.${ext}"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "linux": {
+      "target": "AppImage",
+      "category": "Development",
+      "artifactName": "Rubaxe-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "artifactName": "Rubaxe-${version}-${arch}.${ext}"
+    }
   }
 }

@@ -36,7 +36,8 @@ function childEnv(extra: Record<string, string> = {}): Record<string, string> {
 }
 
 const shellSpawn = (cmd: string, args: string[], cwd: string, extra: Record<string, string> = {}) =>
-  spawn([cmd, ...args].map(quote).join(' '), { cwd, shell: true, env: childEnv(extra) });
+  // detached on Linux/macOS: the shell leads its own process group, so kill() can reach ruby underneath it.
+  spawn([cmd, ...args].map(quote).join(' '), { cwd, shell: true, env: childEnv(extra), detached: process.platform !== 'win32' });
 
 // Interpreters from PATH and the usual version-manager folders (rbenv, rvm, asdf, chruby, mise, RubyInstaller).
 async function findRubies(): Promise<{ path: string; manager: string }[]> {
@@ -65,9 +66,11 @@ async function findRubies(): Promise<{ path: string; manager: string }[]> {
 }
 
 function kill(child: ChildProcess) {
-  // child is the shell; on Windows only taskkill /T reaches the ruby process underneath it.
+  // child is the shell; killing only it would leave ruby running. Windows: taskkill /T; elsewhere: the process group.
   if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
-  else child.kill();
+  else {
+    try { process.kill(-child.pid!, 'SIGTERM'); } catch { child.kill(); }
+  }
 }
 
 async function walk(root: string): Promise<string[]> {

@@ -320,6 +320,7 @@ function defineTheme() {
 }
 
 async function boot() {
+  document.body.classList.add(`platform-${api.platform}`);
   Features.load(await api.loadSettings());
   await Ruby.applyRubyBin();
   defineTheme();

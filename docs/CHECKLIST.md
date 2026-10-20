@@ -162,7 +162,8 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Testes unitários (`npm test`, 31 testes): convenções de teste, fuzzy, LSP framing, rake, relatórios de teste, Rails, Git, intentions, estilo de código
 - [x] Meta de desempenho — medido: abre em ~0,7 s (0,93 s reabrindo um projeto); digitando num arquivo de 10.007 linhas, mediana 27 ms e pior caso 43 ms por tecla, contando 2 frames de tela
 - [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe Setup <versão>.exe`; instalação silenciosa, atalhos, app instalado (pasta com espaços e acentos) e desinstalação testados. Sem assinatura de código (não há certificado nesta máquina): o Windows SmartScreen avisa na primeira execução. Linux: o pacote é gerado, mas o node-pty não tem binário pronto para Linux — gere com `npm run dist:linux` numa máquina Linux (compila o terminal). macOS: só em um Mac (exigência da Apple)
-- [x] Atualizar o README com "como rodar"
+- [x] Atualizar o README com apresentação, instalação pelo instalador e pelo código-fonte
+- [x] GitHub Actions (`.github/workflows/build.yml`): gera Linux (AppImage), macOS (dmg x64 e arm64, assinatura ad-hoc) e Windows; uma tag `v*` publica tudo num Release
 
 ---
 
