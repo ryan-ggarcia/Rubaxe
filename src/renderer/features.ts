@@ -1,5 +1,6 @@
 // Feature registry (see docs/CHECKLIST.md) and the settings editor.
 // 'ok' = implemented and can be toggled; 'planned' = shown disabled until it is built.
+import { STYLE_SETTINGS } from './code-style.ts';
 import { h } from './dom.ts';
 
 type Status = 'ok' | 'planned';
@@ -16,46 +17,46 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['documentHighlight', 'Destacar ocorrências do símbolo', 'ok'],
     ['documentSymbols', 'Estrutura do arquivo e Ctrl+Shift+O', 'ok'],
     ['workspaceSymbols', 'Buscar símbolo no projeto (Ctrl+T)', 'ok'],
-    ['inlayHints', 'Inlay hints de tipos e parâmetros', 'planned'],
-    ['semanticHighlighting', 'Realce semântico', 'planned'],
-    ['typeHierarchy', 'Hierarquia de tipos e chamadas', 'planned'],
+    ['inlayHints', 'Inlay hints (rescue implícito, valores de hash)', 'ok'],
+    ['semanticHighlighting', 'Realce semântico', 'ok'],
+    ['typeHierarchy', 'Hierarquia de tipos e chamadas', 'ok'],
   ]],
   ['Qualidade e refatoração', [
     ['diagnostics', 'Diagnósticos em tempo real (sintaxe + RuboCop)', 'ok'],
     ['codeActions', 'Quick-fixes e refatorações (Ctrl+.)', 'ok'],
     ['formatting', 'Formatar documento (Shift+Alt+F)', 'ok'],
     ['rename', 'Renomear símbolo (F2)', 'ok'],
-    ['intentions', 'Ações no código: do↔{}, hash rocket, ternário…', 'planned'],
+    ['intentions', 'Ações no código: do↔{}, hash rocket, ternário…', 'ok'],
     ['inspections', 'Inspeções extras (nil, tipos, Rails, RSpec, YARD)', 'planned'],
-    ['generate', 'Gerar attr_accessor, construtor, let do RSpec', 'planned'],
+    ['generate', 'Gerar attr_accessor, construtor, let do RSpec', 'ok'],
     ['railsRename', 'Rename que entende Rails (model/controller/view)', 'planned'],
   ]],
   ['Executar e testar', [
     ['runFile', 'Executar arquivo Ruby (Ctrl+F5)', 'ok'],
     ['runTests', 'Executar testes RSpec / Minitest do arquivo ou da linha', 'ok'],
     ['gotoTest', 'Ir para teste ↔ implementação (Ctrl+Shift+T)', 'ok'],
-    ['debugger', 'Depurador (rdbg / DAP) com breakpoints', 'planned'],
-    ['testTree', 'Árvore de testes com rerun de falhas', 'planned'],
-    ['coverage', 'Cobertura de código', 'planned'],
-    ['profiler', 'Profiler', 'planned'],
-    ['console', 'Console IRB / Pry / Rails', 'planned'],
-    ['terminal', 'Terminal integrado', 'planned'],
+    ['debugger', 'Depurador (rdbg / DAP) com breakpoints', 'ok'],
+    ['testTree', 'Árvore de testes com rerun de falhas', 'ok'],
+    ['coverage', 'Cobertura de código', 'ok'],
+    ['profiler', 'Profiler', 'ok'],
+    ['console', 'Console IRB / Rails e enviar seleção ao console', 'ok'],
+    ['terminal', 'Terminal integrado', 'ok'],
   ]],
   ['Ecossistema Ruby', [
     ['bundler', 'Bundler: install, update, outdated, lock, clean', 'ok'],
     ['rake', 'Listar e executar tarefas Rake', 'ok'],
     ['sdk', 'Detectar versão do Ruby e .ruby-version', 'ok'],
-    ['versionManagers', 'rbenv / rvm / asdf / chruby / mise', 'planned'],
-    ['gemsView', 'Lista de gems com navegação para o código', 'planned'],
-    ['rbs', 'RBS e Steep (assinaturas de tipo)', 'planned'],
+    ['versionManagers', 'Escolher interpretador (rbenv / rvm / asdf / chruby / mise / RubyInstaller)', 'ok'],
+    ['gemsView', 'Lista de gems com navegação para o código', 'ok'],
+    ['rbs', 'RBS (realce) e Steep check', 'ok'],
   ]],
   ['Rails', [
-    ['railsNav', 'Navegar Model ↔ Controller ↔ View ↔ Helper', 'planned'],
-    ['railsGenerators', 'Executar generators', 'planned'],
-    ['railsRoutes', 'Rotas, i18n e schema', 'planned'],
+    ['railsNav', 'Navegar Model ↔ Controller ↔ View ↔ Helper', 'ok'],
+    ['railsGenerators', 'Generators, servidor e migrations', 'ok'],
+    ['railsRoutes', 'Completar rotas (_path/_url) e chaves i18n', 'ok'],
   ]],
   ['Ferramentas', [
-    ['git', 'Git: status, diff, commit, blame', 'planned'],
+    ['git', 'Git: status, diff, stage, commit, blame, branches', 'ok'],
     ['httpClient', 'Cliente HTTP', 'planned'],
     ['database', 'Ferramentas de banco de dados', 'planned'],
   ]],
@@ -65,11 +66,13 @@ const SETTINGS: Setting[] = [
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
   ['Ruby', 'ruby.lspPath', 'Comando do servidor Ruby LSP (gem install ruby-lsp).', 'string', 'ruby-lsp'],
   ['Ruby', 'test.framework', 'Framework de testes.', ['auto', 'rspec', 'minitest'], 'auto'],
+  ['Terminal', 'terminal.shell', 'Shell do terminal integrado (padrão: PowerShell no Windows, $SHELL no Linux/macOS).', 'string', ''],
   ['Editor', 'editor.fontSize', 'Tamanho da fonte.', 'number', 14],
   ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
   ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],
   ['Editor', 'editor.minimap', 'Mostrar minimapa.', 'boolean', true],
   ['Editor', 'editor.wordWrap', 'Quebrar linhas longas.', 'boolean', false],
+  ...STYLE_SETTINGS.map(([key, desc, type, def]): Setting => ['Estilo de código (RuboCop)', key, desc, type, def]),
 ];
 
 function defaults(): Settings {

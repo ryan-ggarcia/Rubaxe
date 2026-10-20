@@ -114,11 +114,11 @@ body.dragging * { pointer-events: none; }
 .tab .close:hover { background: #FFFFFF1A; }
 .tab.dirty:not(:hover) .close::before { content: '\ea71'; }
 #editor-area { flex: 1; min-height: 0; position: relative; display: flex; }
-#editor, #settings-page, #welcome { flex: 1; min-width: 0; }
+#editor, #diff-editor, #settings-page, #welcome { flex: 1; min-width: 0; }
 
 #welcome { display: flex; align-items: center; justify-content: center; }
 .welcome-inner { display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
-.welcome-inner h1 { font-weight: 300; font-size: 36px; margin: 0; color: #E0533D; }
+.welcome-logo { width: 200px; height: 200px; border-radius: 24px; }
 .welcome-inner .button { align-self: flex-start; margin: 8px 0 16px; }
 .shortcut { display: flex; justify-content: space-between; gap: 24px; color: var(--muted); }
 kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #FFFFFF40; border-radius: 3px; padding: 0 5px; font: 11px/18px inherit; color: var(--fg); }
@@ -151,6 +151,55 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .codicon-error { color: var(--error); }
 .codicon-warning { color: var(--warning); }
 .codicon-info { color: #3794FF; }
+
+/* Debugger */
+.debug-section { flex: 0 1 25%; }
+.section-header .spacer { flex: 1; }
+.section-header .codicon { padding: 0 6px; }
+.var-name { color: #C586C0; flex: none; }
+.var-name::after { content: ':'; color: var(--fg); margin-right: 4px; }
+.var-value { overflow: hidden; text-overflow: ellipsis; }
+.tree-row .row-action { margin-left: auto; visibility: hidden; }
+.tree-row:hover .row-action { visibility: visible; }
+.codicon-debug-breakpoint, .codicon-debug-breakpoint-conditional, .bp-glyph { color: #E51400 !important; }
+.debug-frame-glyph { color: #FFCC00 !important; }
+.debug-line { background: #FFFF0033; }
+.monaco-editor .bp-glyph, .monaco-editor .debug-frame-glyph { font-size: 14px !important; display: flex; align-items: center; justify-content: center; }
+#panel-debug { display: flex; flex-direction: column; padding-bottom: 6px; }
+#debug-console { flex: 1; overflow: auto; margin: 0; font: 12px/1.4 Consolas, 'Courier New', monospace; white-space: pre-wrap; }
+#debug-input { font-family: Consolas, 'Courier New', monospace; }
+#statusbar.debugging { background: #CC6633; color: #fff; }
+
+/* Source control */
+.scm-commit { padding: 0 8px 8px 20px; flex: none; }
+#scm-message { width: 100%; resize: vertical; font: inherit; }
+.scm-section { cursor: default; padding-right: 8px; }
+.scm-section .row-action { visibility: visible; padding: 0 4px; }
+.scm-row { padding-left: 20px; }
+.scm-letter { width: 14px; flex: none; text-align: center; font-weight: 600; margin-left: 4px; }
+.scm-row .row-action { margin-left: 0; }
+.scm-row .row-action:first-of-type { margin-left: auto; }
+.blame-text { color: #FFFFFF55 !important; font-style: italic; }
+
+#view-ruby #ruby-body { flex: 0 1 auto; }
+#gems-body { flex: 1; }
+
+/* Terminal */
+#panel-terminal { display: flex; padding: 0 0 4px 12px; }
+#terminal-host { flex: 1; position: relative; min-height: 0; }
+.term { position: absolute; inset: 0; }
+.terminal-actions { display: flex; align-items: center; gap: 4px; }
+#terminal-select { padding: 1px 4px; font-size: 12px; max-width: 180px; }
+
+/* Tests, coverage */
+.codicon-pass-filled, .test-glyph.passed { color: #73C991 !important; }
+.test-glyph { color: #73C991; }
+.test-glyph.failed { color: #F14C4C !important; }
+.monaco-editor .test-glyph { font-size: 14px !important; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.test-row { padding-left: 28px; }
+.test-message { padding: 2px 8px 6px 50px; color: #F48771; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 Consolas, 'Courier New', monospace; user-select: text; }
+.cov-hit { background: #2EA04366; width: 4px !important; margin-left: 3px; }
+.cov-miss { background: #F8514999; width: 4px !important; margin-left: 3px; }
 
 #statusbar { background: var(--bar); border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 12px; }
 #sb-left, #sb-right { display: flex; height: 100%; }

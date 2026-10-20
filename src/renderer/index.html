@@ -6,6 +6,7 @@
   <title>Rubaxe</title>
   <link rel="stylesheet" href="../../node_modules/@vscode/codicons/dist/codicon.css">
   <link rel="stylesheet" href="../../node_modules/monaco-editor/min/vs/editor/editor.main.css">
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,6 +20,9 @@
     <nav id="activitybar">
       <div class="ab-item" data-view="explorer" title="Explorer (Ctrl+Shift+E)"><span class="codicon codicon-files"></span></div>
       <div class="ab-item" data-view="search" title="Pesquisar (Ctrl+Shift+F)"><span class="codicon codicon-search"></span></div>
+      <div class="ab-item" data-view="scm" title="Controle de Código (Ctrl+Shift+G)"><span class="codicon codicon-source-control"></span></div>
+      <div class="ab-item" data-view="debug" title="Executar e Depurar (Ctrl+Shift+D)"><span class="codicon codicon-debug-alt"></span></div>
+      <div class="ab-item" data-view="tests" title="Testes"><span class="codicon codicon-beaker"></span></div>
       <div class="ab-item" data-view="ruby" title="Ruby"><span class="codicon codicon-ruby"></span></div>
       <div class="ab-spacer"></div>
       <div class="ab-item" id="ab-settings" title="Configurações (Ctrl+,)"><span class="codicon codicon-settings-gear"></span></div>
@@ -44,9 +48,31 @@
         </div>
         <div class="view-body" id="search-results"></div>
       </section>
+      <section class="view" id="view-scm" hidden>
+        <div class="view-header"><span>CONTROLE DE CÓDIGO</span><span class="view-actions" id="scm-actions"></span></div>
+        <div class="scm-commit"><textarea class="input" id="scm-message" rows="3" placeholder="Mensagem do commit (Ctrl+Enter)" spellcheck="false"></textarea></div>
+        <div class="view-body" id="scm-body"></div>
+      </section>
+      <section class="view" id="view-debug" hidden>
+        <div class="view-header"><span>EXECUTAR E DEPURAR</span><span class="view-actions" id="debug-actions"></span></div>
+        <div class="section-header">VARIÁVEIS</div>
+        <div class="view-body debug-section" id="debug-vars"></div>
+        <div class="section-header">INSPEÇÃO<span class="spacer"></span><span class="codicon codicon-add" id="debug-watch-add" title="Adicionar expressão"></span></div>
+        <div class="view-body debug-section" id="debug-watch"></div>
+        <div class="section-header">PILHA DE CHAMADAS</div>
+        <div class="view-body debug-section" id="debug-stack"></div>
+        <div class="section-header">BREAKPOINTS</div>
+        <div class="view-body debug-section" id="debug-bps"></div>
+      </section>
+      <section class="view" id="view-tests" hidden>
+        <div class="view-header"><span>TESTES</span><span class="view-actions" id="tests-actions"></span></div>
+        <div class="view-body" id="tests-tree"></div>
+      </section>
       <section class="view" id="view-ruby" hidden>
         <div class="view-header"><span>RUBY</span></div>
         <div class="view-body" id="ruby-body"></div>
+        <div class="section-header" id="gems-header"><span class="codicon codicon-chevron-down"></span>GEMS<span class="spacer"></span><span class="codicon codicon-refresh" id="gems-refresh" title="Recarregar gems"></span></div>
+        <div class="view-body" id="gems-body"></div>
       </section>
     </aside>
     <div class="sash vertical" id="sash-side"></div>
@@ -55,6 +81,7 @@
       <div id="tabs"></div>
       <div id="editor-area">
         <div id="editor" hidden></div>
+        <div id="diff-editor" hidden></div>
         <div id="settings-page" hidden></div>
         <div id="welcome"></div>
       </div>
@@ -63,13 +90,25 @@
         <div class="panel-header">
           <div class="panel-tab" data-panel="problems">PROBLEMAS <span class="badge" id="problems-count"></span></div>
           <div class="panel-tab" data-panel="output">SAÍDA</div>
+          <div class="panel-tab" data-panel="debug">CONSOLE DE DEPURAÇÃO</div>
+          <div class="panel-tab" data-panel="terminal">TERMINAL</div>
           <span class="spacer"></span>
+          <span class="terminal-actions" id="terminal-actions" hidden>
+            <select class="input" id="terminal-select" title="Terminais"></select>
+            <span class="codicon codicon-add" id="terminal-new" title="Novo terminal (Ctrl+Shift+`)"></span>
+            <span class="codicon codicon-trash" id="terminal-kill" title="Encerrar terminal"></span>
+          </span>
           <span class="codicon codicon-debug-stop disabled" id="panel-stop" title="Parar (Ctrl+F2)"></span>
           <span class="codicon codicon-clear-all" id="panel-clear" title="Limpar saída"></span>
           <span class="codicon codicon-close" id="panel-close" title="Fechar painel (Ctrl+J)"></span>
         </div>
         <div class="panel-body" id="panel-problems"></div>
         <pre class="panel-body" id="panel-output" hidden></pre>
+        <div class="panel-body" id="panel-terminal" hidden><div id="terminal-host"></div></div>
+        <div class="panel-body" id="panel-debug" hidden>
+          <pre id="debug-console"></pre>
+          <input class="input" id="debug-input" placeholder="Avaliar expressão Ruby no frame selecionado (Enter)" spellcheck="false">
+        </div>
       </section>
     </div>
   </div>

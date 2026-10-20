@@ -19,7 +19,7 @@ Você é dono de `test/**` e `tools/**`. **Não edite** `src/**`: bug encontrado
    node --test "test/**/*.test.ts"
    ./node_modules/.bin/esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist
    ./node_modules/.bin/esbuild src/renderer/app.ts --bundle --format=iife --outfile=dist/renderer.js
-   python tools/cleanroom_check.py "C:/Program Files/JetBrains/RubyMine 2026.2.3/plugins/ruby/lib" .
+   python tools/cleanroom_check.py "C:/Program Files/JetBrains/RubyMine 2026.2.1/plugins/ruby/lib" .
    ```
    O verificador de clean room é a **única** exceção em que o RubyMine é lido, e só pelo script; nunca abra os JARs nem copie o que ele encontrar. Qualquer ocorrência bloqueia a entrega.
 3. **Teste do app rodando (end-to-end):**

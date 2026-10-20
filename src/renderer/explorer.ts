@@ -4,7 +4,7 @@ import { $, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
-import { prompt } from './quick-input.ts';
+import { prompt, quickPick } from './quick-input.ts';
 
 const SYMBOL_ICONS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable', 'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enum-member', 'struct', 'event', 'operator', 'type-parameter'];
 const expanded = new Set<string>();
@@ -20,6 +20,13 @@ export function initExplorer(openFolder: () => void) {
     action('collapse-all', 'Recolher tudo', () => { expanded.clear(); renderExplorer(); }),
   );
   $('#explorer-empty-open').onclick = openFolder;
+  const tree = $('#explorer-tree');
+  tree.tabIndex = 0;
+  tree.onkeydown = e => {
+    if (!selected || (e.key !== 'F2' && e.key !== 'Delete')) return;
+    e.preventDefault();
+    void (e.key === 'F2' ? renameEntry(selected) : deleteEntry(selected));
+  };
   $('#outline-header').onclick = () => {
     const body = $('#outline');
     body.hidden = !body.hidden;
@@ -62,7 +69,20 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
         document.querySelectorAll('.tree-row.selected').forEach(el => el.classList.remove('selected'));
         row.classList.add('selected');
         await Editor.openFile(e.path);
+        $('#explorer-tree').focus(); // like VS Code: single click previews, focus stays for F2/Delete
       }
+    };
+    if (!e.dir) row.ondblclick = () => Editor.editor.focus();
+    row.oncontextmenu = ev => {
+      ev.preventDefault();
+      selected = e.path;
+      selectedIsDir = e.dir;
+      document.querySelectorAll('.tree-row.selected').forEach(el => el.classList.remove('selected'));
+      row.classList.add('selected');
+      quickPick({ placeholder: e.name, items: () => [
+        { label: 'Renomear...', description: 'F2', icon: 'edit', run: () => void renameEntry(e.path) },
+        { label: 'Mover para a lixeira', description: 'Delete', icon: 'trash', run: () => void deleteEntry(e.path) },
+      ] });
     };
     out.push(row);
     if (e.dir && open) out.push(...await nodes(e.path, depth + 1));
@@ -70,9 +90,63 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
   return out;
 }
 
+const parentOf = (p: string) => p.slice(0, p.length - basename(p).length - 1);
+// Windows paths are case-insensitive, and Monaco's fsPath lowercases the drive letter.
+const fold = (p: string) => api.platform === 'win32' ? p.toLowerCase() : p;
+const isUnder = (p: string, root: string) => fold(p) === fold(root) || fold(p).startsWith(fold(root) + ws.sep);
+const tabsUnder = (root: string) => Editor.tabs.filter(t => t.path && isUnder(t.path, root));
+
+async function renameEntry(from: string) {
+  const name = await prompt(`Novo nome para ${basename(from)}`, basename(from));
+  if (!name || name === basename(from)) return;
+  // Monaco model URIs are fixed, so open tabs are closed and reopened; dirty ones would lose their edits.
+  const affected = tabsUnder(from).sort((a, b) => Number(a === Editor.active) - Number(b === Editor.active));
+  if (affected.some(t => t.dirty)) return notify(`Salve os arquivos abertos de ${basename(from)} antes de renomear.`, 'error');
+  const to = parentOf(from) + ws.sep + name;
+  try {
+    await api.renamePath(from, to);
+  } catch (e) {
+    return notify(`Não foi possível renomear ${basename(from)}: ${(e as Error).message}`, 'error');
+  }
+  for (const p of [...expanded]) if (isUnder(p, from)) { expanded.delete(p); expanded.add(to + p.slice(from.length)); }
+  selected = to;
+  const reopen = affected.map(t => to + t.path!.slice(from.length));
+  affected.forEach(t => Editor.closeTab(t));
+  for (const p of reopen) await Editor.openFile(p);
+  await refreshFiles();
+  await renderExplorer();
+}
+
+// Re-lists the workspace and tells the Ruby LSP which files appeared or vanished, so its index stays right.
+async function refreshFiles() {
+  const before = new Set(ws.files);
+  ws.files = await api.listFiles(ws.root);
+  const after = new Set(ws.files);
+  Lsp.filesChanged([...ws.files.filter(f => !before.has(f)).map(f => [f, 1] as const), ...[...before].filter(f => !after.has(f)).map(f => [f, 3] as const)]);
+}
+
+// After commands that create files (generators): re-list, tell the LSP, redraw.
+export async function refreshWorkspace() {
+  await refreshFiles();
+  await renderExplorer();
+}
+
+async function deleteEntry(p: string) {
+  if (!confirm(`Mover "${basename(p)}" para a lixeira?`)) return;
+  for (const t of tabsUnder(p)) if (!Editor.closeTab(t)) return;
+  try {
+    await api.trashPath(p);
+  } catch (e) {
+    return notify(`Não foi possível excluir ${basename(p)}: ${(e as Error).message}`, 'error');
+  }
+  selected = '';
+  await refreshFiles();
+  await renderExplorer();
+}
+
 async function newEntry(isDir: boolean) {
   if (!ws.root) return;
-  const base = !selected ? ws.root : selectedIsDir ? selected : selected.slice(0, selected.length - basename(selected).length - 1);
+  const base = !selected ? ws.root : selectedIsDir ? selected : parentOf(selected);
   const name = await prompt(`${isDir ? 'Nome da pasta' : 'Nome do arquivo'} em ${basename(base)}/ (use / para subpastas)`);
   if (!name) return;
   const path = base + ws.sep + name.split('/').join(ws.sep);

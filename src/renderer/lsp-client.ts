@@ -19,6 +19,7 @@ const COMPLETION_KINDS = ['Text', 'Method', 'Function', 'Constructor', 'Field', 
 
 let nextId = 1, ready = false, generation = 0;
 let hooks: Hooks | undefined;
+let semanticRegistered = false;
 const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
 const opened = new Map<string, M.editor.ITextModel>();
 const listeners = new Map<string, { dispose(): void }>();
@@ -45,6 +46,10 @@ function request<T = any>(method: string, params: unknown, force = false): Promi
   return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
 }
 const notify = (method: string, params: unknown) => api.lspSend({ jsonrpc: '2.0', method, params });
+// type: 1 created, 3 deleted (LSP FileChangeType).
+export const filesChanged = (changes: (readonly [path: string, type: 1 | 3])[]) => {
+  if (ready && changes.length) notify('workspace/didChangeWatchedFiles', { changes: changes.map(([p, type]) => ({ uri: monaco.Uri.file(p).toString(), type })) });
+};
 // Providers must never throw into Monaco; a failed request just means no result.
 const ask = <T = any>(feature: string, method: string, params: unknown): Promise<T | null> =>
   Features.on(feature) && ready ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
@@ -205,6 +210,18 @@ export function registerProviders() {
       return r ? toWorkspaceEdit(r) : { edits: [], rejectReason: 'O Ruby LSP não conseguiu renomear este símbolo.' };
     },
   });
+  L.registerInlayHintsProvider(id, {
+    async provideInlayHints(model, r) {
+      const res = await ask<any[]>('inlayHints', 'textDocument/inlayHint', { textDocument: doc(model), range: lspRange(r) });
+      const hints = (res ?? []).map(x => ({
+        position: { lineNumber: x.position.line + 1, column: x.position.character + 1 },
+        label: typeof x.label === 'string' ? x.label : x.label.map((p: any) => p.value).join(''),
+        kind: x.kind === 2 ? L.InlayHintKind.Parameter : L.InlayHintKind.Type, paddingLeft: x.paddingLeft, paddingRight: x.paddingRight,
+        tooltip: typeof x.tooltip === 'string' ? x.tooltip : x.tooltip?.value,
+      }));
+      return { hints, dispose() {} };
+    },
+  });
   L.registerCodeActionProvider(id, {
     async provideCodeActions(model, r) {
       const context = (diagnostics.get(model.uri.toString()) ?? []).filter(d => range(d.range).intersectRanges(r));
@@ -229,10 +246,11 @@ export async function start(root: string, command: string, h: Hooks) {
   hooks.status('starting');
   api.lspStart(command, root);
   const rootUri = monaco.Uri.file(root).toString();
+  let init: any;
   try {
-    await request('initialize', {
+    init = await request('initialize', {
       processId: null, rootUri, workspaceFolders: [{ uri: rootUri, name: root.split(/[\\/]/).pop() }],
-      initializationOptions: { formatter: 'auto' },
+      initializationOptions: { formatter: 'auto', featuresConfiguration: { inlayHint: { implicitRescue: true, implicitHashValue: true } } },
       capabilities: {
         window: { workDoneProgress: true },
         workspace: { workspaceFolders: true, applyEdit: true, configuration: true, symbol: {} },
@@ -243,6 +261,8 @@ export async function start(root: string, command: string, h: Hooks) {
           signatureHelp: { signatureInformation: { documentationFormat: ['markdown', 'plaintext'] } },
           definition: { linkSupport: true }, references: {}, documentHighlight: {}, rename: {}, formatting: {},
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+          inlayHint: {}, typeHierarchy: {},
+          semanticTokens: { requests: { full: true }, tokenTypes: [], tokenModifiers: [], formats: ['relative'] },
           publishDiagnostics: {},
           codeAction: {
             resolveSupport: { properties: ['edit'] },
@@ -257,10 +277,60 @@ export async function start(root: string, command: string, h: Hooks) {
     return;
   }
   if (mine !== generation) return;
+  registerSemanticTokens(init?.capabilities?.semanticTokensProvider?.legend);
   notify('initialized', {});
   ready = true;
   hooks.status('ready');
   opened.forEach(sendOpen);
+}
+
+// The legend comes from the server, so the provider can only be registered after the first initialize.
+function registerSemanticTokens(legend: M.languages.SemanticTokensLegend | undefined) {
+  if (!legend || semanticRegistered) return;
+  semanticRegistered = true;
+  monaco.languages.registerDocumentSemanticTokensProvider('ruby', {
+    getLegend: () => legend,
+    async provideDocumentSemanticTokens(model) {
+      const r = await ask<{ data: number[]; resultId?: string }>('semanticHighlighting', 'textDocument/semanticTokens/full', { textDocument: doc(model) });
+      return r ? { data: new Uint32Array(r.data), resultId: r.resultId } : null;
+    },
+    releaseDocumentSemanticTokens() {},
+  });
+}
+
+type HierarchyItem = { name: string; kind: number; detail?: string; uri: string; range: LRange; selectionRange: LRange };
+export interface TypeNode { item: HierarchyItem; parents: TypeNode[] }
+
+// Supertypes recursively (ruby-lsp answers supertypes; subtypes are asked for but may be unsupported).
+export async function typeHierarchy(model: M.editor.ITextModel, position: M.IPosition) {
+  const items = await ask<HierarchyItem[]>('typeHierarchy', 'textDocument/prepareTypeHierarchy', { textDocument: doc(model), position: pos(position) });
+  if (!items?.length) return null;
+  const up = async (item: HierarchyItem, depth: number): Promise<TypeNode[]> =>
+    depth > 8 ? [] : Promise.all(((await ask<HierarchyItem[]>('typeHierarchy', 'typeHierarchy/supertypes', { item })) ?? []).map(async s => ({ item: s, parents: await up(s, depth + 1) })));
+  return { root: items[0], supers: await up(items[0], 0), subs: (await ask<HierarchyItem[]>('typeHierarchy', 'typeHierarchy/subtypes', { item: items[0] })) ?? [] };
+}
+
+// No call hierarchy in ruby-lsp: callers are the references grouped by the method that contains each one.
+export async function callers(model: M.editor.ITextModel, position: M.IPosition) {
+  const refs = await ask<{ uri: string; range: LRange }[]>('references', 'textDocument/references', { textDocument: doc(model), position: pos(position), context: { includeDeclaration: false } });
+  const out: { name: string; uri: string; line: number }[] = [];
+  for (const [uri, list] of Map.groupBy(refs ?? [], r => r.uri)) {
+    const m = await hooks?.ensureModel(monaco.Uri.parse(uri));
+    const syms = m ? await documentSymbols(m) : [];
+    for (const ref of list) {
+      let best: { s: M.languages.DocumentSymbol; path: string[] } | undefined;
+      const walk = (ss: M.languages.DocumentSymbol[], path: string[]) => ss.forEach(s => {
+        if (!monaco.Range.containsPosition(s.range, { lineNumber: ref.range.start.line + 1, column: ref.range.start.character + 1 })) return;
+        if (s.kind === monaco.languages.SymbolKind.Method || s.kind === monaco.languages.SymbolKind.Function || s.kind === monaco.languages.SymbolKind.Constructor) best = { s, path };
+        walk(s.children ?? [], [...path, s.name]);
+      });
+      walk(syms, []);
+      // ruby-lsp includes the method's own name in `def` even with includeDeclaration: false.
+      if (best && best.s.selectionRange.startLineNumber === ref.range.start.line + 1 && best.s.selectionRange.startColumn === ref.range.start.character + 1) continue;
+      out.push({ name: best ? `${best.path.join('::')}${best.path.length ? '#' : ''}${best.s.name}` : '(nível superior)', uri, line: ref.range.start.line + 1 });
+    }
+  }
+  return out;
 }
 
 export function stop() {

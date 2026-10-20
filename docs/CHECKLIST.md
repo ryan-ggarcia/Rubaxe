@@ -3,7 +3,7 @@
 IDE para Ruby com o **suporte à linguagem do RubyMine** e o **layout, navegação e estilo do VS Code**.
 Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas *o que* cada funcionalidade faz, nunca código.
 
-> Status: **fases 1–6 (MVP) implementadas** em TypeScript + Electron. Próximo passo: resolver a seção 2 e validar a fase 3 com o Ruby LSP real.
+> Status: **fases 1–11 implementadas e testadas** em TypeScript + Electron (itens adiados marcados com o motivo).
 > ★ = fundamental (entra no MVP). Demais itens ficam visíveis em Configurações como "planejado".
 
 ---
@@ -33,9 +33,10 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 ## 2. Bloqueios no ambiente atual (resolver antes de começar)
 
-- [ ] **Reinstalar o Node.js** — `npm` está corrompido (`node_modules/npm/node_modules/which/lib/index.js` contém bytes binários).
-- [ ] **Reinstalar o Ruby 4.0** — `lib/ruby/4.0.0/rubygems/defaults/operating_system.rb` está corrompido; `ruby -e`, `gem` e `bundle` falham.
-- [ ] `gem install ruby-lsp` (depois de reinstalar o Ruby).
+- [x] **Reinstalar o Node.js** — resolvido (Node 26.10, npm 11.19).
+- [x] **Reinstalar o Ruby 4.0** — resolvido (Ruby 4.0.5, gem e bundle funcionando).
+- [x] `gem install ruby-lsp` — instalado (0.26.11).
+- [ ] `ridk install` (toolchain C do RubyInstaller) — necessário para o ruby-lsp em projetos com Gemfile que compilam gems nativas.
 
 ---
 
@@ -60,6 +61,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 ### Fase 2 — Arquivos, navegação e busca ★
 - [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo
+- [x] Renomear (F2) e mover para a lixeira (Delete) pelo menu de contexto do explorer; abas abertas acompanham
+- [x] Recarregar abas quando o arquivo muda fora do Rubaxe (ao focar a janela); aba com alterações não salvas é mantida e avisada
+- [x] Abrir arquivo solto (paleta: "Arquivo: Abrir Arquivo...")
 - [x] Abrir, editar e salvar (Ctrl+S)
 - [x] Avisar sobre alterações não salvas ao fechar a janela
 - [x] Quick Open de arquivos com busca fuzzy (Ctrl+P)
@@ -107,46 +111,57 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Persistência em JSON no diretório do usuário
 
 ### Fase 7 — Depurador
-- [ ] Cliente DAP + `rdbg`
-- [ ] Breakpoints (linha, condicional), step over/into/out, continuar
-- [ ] Variáveis, watches, pilha de chamadas, console de avaliação
-- [ ] Depurar testes; attach a processo; debug remoto
+> **Testado no app real** (CDP, 22 checagens). rdbg abre uma porta TCP e fala DAP; o Rubaxe conecta com `attach { localfs: true }` e pula a parada automática no carregamento. "Sair" (Shift+F11) para no `end` do método (evento de retorno do Ruby) antes de voltar ao chamador — comportamento do rdbg.
+
+- [x] Cliente DAP + `rdbg` (`rdbg --open -c -- <comando>`; F5 depura o arquivo atual)
+- [x] Breakpoints (linha, condicional), step over/into/out, continuar — clique na margem ou F9; Shift+clique ou paleta para condição
+- [x] Variáveis, watches, pilha de chamadas, console de avaliação (painel "Console de Depuração")
+- [x] Depurar testes; attach a processo; debug remoto — attach por `host:porta`; remoto só casa breakpoints se os caminhos forem iguais (sem mapeamento de pastas)
 
 ### Fase 8 — Testes avançados
-- [ ] Árvore de testes com resultado por exemplo
-- [ ] Reexecutar só os que falharam
-- [ ] Ícone "executar" na margem ao lado de `describe`/`it`/`def test_`
-- [ ] Cobertura (SimpleCov) no editor
-- [ ] Profiler (stackprof / vernier)
+> **Testado no app real** (CDP, 17 checagens) com RSpec e Minitest 6. Sem gems extras: RSpec usa `--format json`; Minitest, cobertura e profiler usam helpers Ruby em `src/ruby/` carregados por `RUBYOPT`.
+
+- [x] Árvore de testes com resultado por exemplo (view "Testes", mensagem da falha abaixo do teste)
+- [x] Reexecutar só os que falharam (RSpec/Rails por `arquivo:linha`, Minitest por nome)
+- [x] Ícone "executar" na margem ao lado de `describe`/`it`/`def test_`/`test "..."`, com cor do último resultado
+- [x] Cobertura no editor — módulo `Coverage` do Ruby (o mesmo que o SimpleCov usa), barra verde/vermelha na margem e resumo no painel
+- [x] Profiler — TracePoint (sem gems), lista por tempo próprio que abre o método; mais lento que vernier/stackprof em código muito quente
 
 ### Fase 9 — Rails
-- [ ] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema
-- [ ] Executar generators (model, controller, scaffold, migration…)
-- [ ] Rails server e Rails console como configurações de execução
-- [ ] Completar rotas e chaves i18n; rename que entende Rails
+> **Testado no app real** com um app Rails 8.1 gerado (`rails new --minimal` + scaffold), 14 checagens. Rails 8.1 em Ruby 4.0/Windows: o `rails console` precisa de `gem "fiddle"` no Gemfile do app (exigência do reline, não do Rubaxe).
+
+- [x] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema (Ctrl+Shift+R; da view vai para a action, do model para o `create_table`)
+- [x] Executar generators (model, controller, scaffold, migration…) e desfazer (`rails destroy`); db:migrate/rollback/seed
+- [x] Rails server (painel Saída) e Rails console (terminal integrado)
+- [x] Completar rotas (`_path`/`_url` de `bin/rails routes`) e chaves i18n (`t('…')` de `config/locales`); views `.erb` com realce HTML
+- [ ] Rename que entende Rails (renomear model/controller/views juntos) — adiado: mexe em muitos arquivos de uma vez; risco alto sem pedido concreto
 
 ### Fase 10 — Recursos avançados do RubyMine
-- [ ] Intentions: `{}`↔`do…end`, hash rocket↔`key:`, `if`↔ternário, modificador↔statement, inverter/juntar/dividir `if`, string↔símbolo, interpolação, heredoc squiggly, `_` em números, ordenar hash
-- [ ] Geração: `attr_accessor`/`reader`/`writer`, construtor, `let` do RSpec
-- [ ] Inspeções extras além do RuboCop (nil, tipos, Rails, RSpec, YARD)
-- [ ] Inlay hints e realce semântico
-- [ ] Hierarquia de tipos e de chamadas
-- [ ] Gerenciadores de versão (rbenv, rvm, asdf, chruby, mise)
-- [ ] Lista de gems com navegação para o código-fonte
-- [ ] RBS e Steep
-- [ ] Console IRB / Pry; carregar seleção no console
-- [ ] Code style configurável (opções da seção 3)
+> **Testado no app real** (16 checagens) + 13 testes unitários das intentions.
+
+- [x] Intentions (Ctrl+.): `{}`↔`do…end`, hash rocket↔`key:`, `if`↔ternário, modificador↔statement, inverter/juntar/dividir `if`, string↔símbolo, interpolação, heredoc squiggly, `_` em números, ordenar hash
+- [x] Geração (Ctrl+.): `attr_accessor`/`reader`/`writer`, `initialize`, `let` do RSpec
+- [ ] Inspeções extras além do RuboCop (nil, tipos, Rails, RSpec, YARD) — adiado: exigiria inferência de tipos própria; Rails/RSpec já vêm do RuboCop com `rubocop-rails`/`rubocop-rspec` no projeto
+- [x] Inlay hints e realce semântico (do Ruby LSP; ele só marca o que a gramática não distingue)
+- [x] Hierarquia de tipos (Ruby LSP) e chamadas do método (Shift+Alt+H; montada a partir dos usos, o Ruby LSP não tem call hierarchy)
+- [x] Gerenciadores de versão: seletor de interpretador (rbenv, rvm, asdf, chruby, mise, RubyInstaller, PATH); o escolhido vai na frente do PATH de tudo que o Rubaxe executa
+- [x] Lista de gems (view Ruby) com navegação para o código-fonte
+- [x] RBS e Steep — `.rbs` com realce Ruby e comando `steep check` (Steep não instalado aqui: comando não verificado)
+- [x] Console IRB; enviar seleção ao console (Ctrl+Alt+Enter). Pry: rode `pry` no terminal
+- [x] Code style configurável: opções da SPEC viram `.rubocop_rubaxe.yml` (herdado pelo `.rubocop.yml`), aplicado pelo formatador via RuboCop
 
 ### Fase 11 — Ferramentas
-- [ ] Terminal integrado (xterm.js + node-pty)
-- [ ] Git: status, diff, stage, commit, blame, branches
-- [ ] Cliente HTTP
-- [ ] Ferramentas de banco de dados
+> **Testado no app real** (13 checagens): PowerShell no terminal, IRB, Git completo num repositório de teste.
+
+- [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais)
+- [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status)
+- [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
+- [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
 
 ### Fase 12 — Qualidade e entrega
-- [x] Testes unitários (`npm test`) para lógica não trivial (convenções de teste, fuzzy, LSP framing, rake)
-- [ ] Meta de desempenho: abrir em < 1,5 s e digitar sem atraso em arquivos de 10 mil linhas
-- [ ] Instalador (electron-builder)
+- [x] Testes unitários (`npm test`, 31 testes): convenções de teste, fuzzy, LSP framing, rake, relatórios de teste, Rails, Git, intentions, estilo de código
+- [x] Meta de desempenho — medido: abre em ~0,7 s (0,93 s reabrindo um projeto); digitando num arquivo de 10.007 linhas, mediana 27 ms e pior caso 43 ms por tecla, contando 2 frames de tela
+- [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe Setup <versão>.exe`; app empacotado testado (terminal, helpers Ruby, depurador). Sem assinatura de código: o Windows SmartScreen avisa na primeira execução
 - [x] Atualizar o README com "como rodar"
 
 ---

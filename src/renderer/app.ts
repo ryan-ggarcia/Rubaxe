@@ -1,14 +1,21 @@
 // Workbench entry: loads Monaco, wires layout, commands, keybindings and the status bar.
 import type * as M from 'monaco-editor';
 import { $, abs, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
+import * as Debug from './debug.ts';
 import * as Editor from './editor.ts';
 import { initExplorer, renderExplorer, renderOutline } from './explorer.ts';
 import * as Features from './features.ts';
+import * as Git from './git.ts';
+import * as Hierarchy from './hierarchy.ts';
+import { registerIntentions } from './intentions.ts';
 import * as Lsp from './lsp-client.ts';
 import * as Panel from './panel.ts';
+import * as Rails from './rails.ts';
 import { fuzzyScore, relativeTo } from './paths.ts';
 import { quickPick, setCloseHandler, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
+import * as Terminal from './terminal.ts';
+import * as Tests from './tests.ts';
 import { focusSearch, initSearch } from './search.ts';
 
 interface Command { id: string; label: string; key?: string; icon?: string; run: () => unknown }
@@ -17,6 +24,7 @@ const lspLog: string[] = [];
 
 const commands: Command[] = [
   { id: 'openFolder', label: 'Arquivo: Abrir Pasta...', key: 'Ctrl+O', icon: 'folder-opened', run: () => openFolder() },
+  { id: 'openFile', label: 'Arquivo: Abrir Arquivo...', icon: 'go-to-file', run: async () => { const f = await api.openFileDialog(); if (f) await Editor.openFile(f); } },
   { id: 'save', label: 'Arquivo: Salvar', key: 'Ctrl+S', icon: 'save', run: () => Editor.save() },
   { id: 'closeTab', label: 'Arquivo: Fechar Editor', key: 'Ctrl+W', icon: 'close', run: () => Editor.active && Editor.closeTab(Editor.active) },
   { id: 'quickOpen', label: 'Ir: Arquivo...', key: 'Ctrl+P', icon: 'go-to-file', run: () => quickOpen() },
@@ -35,15 +43,58 @@ const commands: Command[] = [
   { id: 'runTests', label: 'Ruby: Executar Testes do Arquivo', key: 'Ctrl+Shift+F10', icon: 'beaker', run: () => Ruby.runTests() },
   { id: 'runTestLine', label: 'Ruby: Executar Teste na Linha', key: 'Ctrl+Alt+F10', icon: 'debug-line-by-line', run: () => Ruby.runTests(true) },
   { id: 'runAllTests', label: 'Ruby: Executar Todos os Testes', icon: 'run-all', run: () => Ruby.runAllTests() },
+  { id: 'rerunFailed', label: 'Testes: Reexecutar Falhas', icon: 'debug-rerun', run: () => Tests.rerunFailed() },
+  { id: 'coverageAll', label: 'Testes: Executar Todos com Cobertura', icon: 'run-coverage', run: () => Tests.runWithCoverage(() => Ruby.runAllTests()) },
+  { id: 'coverageFile', label: 'Testes: Executar Testes do Arquivo com Cobertura', icon: 'run-coverage', run: () => Tests.runWithCoverage(() => Ruby.runTests()) },
+  { id: 'hideCoverage', label: 'Testes: Ocultar Cobertura', icon: 'eye-closed', run: () => Tests.hideCoverage() },
+  { id: 'testsView', label: 'Exibir: Testes', icon: 'beaker', run: () => showView('tests') },
+  { id: 'profileFile', label: 'Ruby: Perfilar Arquivo (profiler)', icon: 'flame', run: () => Ruby.runFile(Tests.profile, 'profiler') },
   { id: 'gotoTest', label: 'Ruby: Ir para Teste / Implementação', key: 'Ctrl+Shift+T', icon: 'go-to-file', run: () => Ruby.gotoTest() },
   { id: 'stop', label: 'Ruby: Parar Execução', key: 'Ctrl+F2', icon: 'debug-stop', run: () => Ruby.stopAll() },
   { id: 'rake', label: 'Rake: Executar Tarefa...', icon: 'tools', run: () => Ruby.rakeTasks() },
   ...['install', 'update', 'outdated', 'lock', 'clean'].map(sub => ({ id: `bundle.${sub}`, label: `Bundler: ${sub}`, icon: 'package', run: () => Ruby.bundle(sub) })),
+  { id: 'debugStart', label: 'Depurar: Iniciar / Continuar', key: 'F5', icon: 'debug-alt', run: () => Debug.active() ? Debug.cont() : debugFile() },
+  { id: 'debugStop', label: 'Depurar: Parar', key: 'Shift+F5', icon: 'debug-stop', run: () => Debug.stop() },
+  { id: 'stepOver', label: 'Depurar: Passar por Cima', key: 'F10', icon: 'debug-step-over', run: () => Debug.stepOver() },
+  { id: 'stepInto', label: 'Depurar: Entrar', key: 'F11', icon: 'debug-step-into', run: () => Debug.stepInto() },
+  { id: 'stepOut', label: 'Depurar: Sair', key: 'Shift+F11', icon: 'debug-step-out', run: () => Debug.stepOut() },
+  { id: 'toggleBreakpoint', label: 'Depurar: Alternar Breakpoint', key: 'F9', icon: 'debug-breakpoint', run: () => Debug.toggleBreakpoint() },
+  { id: 'conditionalBreakpoint', label: 'Depurar: Breakpoint Condicional...', icon: 'debug-breakpoint-conditional', run: () => Debug.conditionalBreakpoint() },
+  { id: 'debugTests', label: 'Depurar: Testes do Arquivo', icon: 'beaker', run: () => Ruby.runTests(false, Debug.start, 'debugger') },
+  { id: 'debugTestLine', label: 'Depurar: Teste na Linha', icon: 'debug-line-by-line', run: () => Ruby.runTests(true, Debug.start, 'debugger') },
+  { id: 'debugAttach', label: 'Depurar: Anexar a Processo (rdbg)...', icon: 'debug-disconnect', run: () => Debug.attach() },
+  { id: 'debugView', label: 'Exibir: Executar e Depurar', key: 'Ctrl+Shift+D', icon: 'debug-alt', run: () => showView('debug') },
+  { id: 'debugConsole', label: 'Exibir: Console de Depuração', key: 'Ctrl+Shift+Y', icon: 'debug-console', run: () => Panel.show('debug') },
+  { id: 'railsRelated', label: 'Rails: Ir para Arquivo Relacionado...', key: 'Ctrl+Shift+R', icon: 'references', run: () => Rails.related() },
+  { id: 'railsGenerate', label: 'Rails: Executar Generator...', icon: 'wand', run: () => Rails.generate() },
+  { id: 'railsDestroy', label: 'Rails: Desfazer Generator (destroy)...', icon: 'trash', run: () => Rails.generate(true) },
+  { id: 'railsServer', label: 'Rails: Iniciar Servidor', icon: 'server-process', run: () => Rails.server() },
+  ...['migrate', 'rollback', 'seed'].map(task => ({ id: `rails.db.${task}`, label: `Rails: db:${task}`, icon: 'database', run: () => Rails.db(task) })),
+  { id: 'railsConsole', label: 'Rails: Console', icon: 'terminal', run: () => Rails.openConsole() },
+  { id: 'terminal', label: 'Exibir: Terminal', key: 'Ctrl+`', icon: 'terminal', run: () => Terminal.show() },
+  { id: 'terminalAbnt', label: 'Exibir: Terminal', key: "Ctrl+'", run: () => Terminal.show() },
+  { id: 'terminalNew', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+`', icon: 'add', run: () => Terminal.create() },
+  { id: 'irb', label: 'Ruby: Console IRB', icon: 'terminal', run: () => openIrb() },
+  { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Ctrl+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
+  { id: 'scmView', label: 'Exibir: Controle de Código', key: 'Ctrl+Shift+G', icon: 'source-control', run: () => showView('scm') },
+  { id: 'gitCommit', label: 'Git: Commit', icon: 'check', run: () => Git.commit() },
+  { id: 'gitBranch', label: 'Git: Trocar Branch...', icon: 'git-branch', run: () => Git.switchBranch() },
+  { id: 'gitBlame', label: 'Git: Alternar Blame na Linha', icon: 'person', run: () => Git.toggleBlame() },
+  { id: 'gitRefresh', label: 'Git: Atualizar Status', icon: 'refresh', run: () => Git.refresh() },
+  { id: 'typeHierarchy', label: 'Ruby: Hierarquia de Tipos', icon: 'type-hierarchy', run: () => Hierarchy.showTypeHierarchy() },
+  { id: 'callers', label: 'Ruby: Chamadas do Método', key: 'Shift+Alt+H', icon: 'call-incoming', run: () => Hierarchy.showCallers() },
+  { id: 'selectRuby', label: 'Ruby: Selecionar Interpretador...', icon: 'ruby', run: () => Ruby.selectInterpreter(() => onSettingChange('ruby.path')) },
+  { id: 'gems', label: 'Ruby: Recarregar Lista de Gems', icon: 'package', run: () => { showView('ruby'); void Ruby.loadGems($('#gems-body')); } },
+  { id: 'codeStyle', label: 'Estilo de Código: Gravar Configuração RuboCop no Projeto', icon: 'symbol-ruler', run: () => Ruby.writeCodeStyle(startLsp) },
+  { id: 'steep', label: 'Ruby: Steep Check (tipos RBS)', icon: 'checklist', run: () => Ruby.steepCheck() },
   { id: 'restartLsp', label: 'Ruby: Reiniciar Ruby LSP', icon: 'debug-restart', run: () => startLsp() },
   { id: 'lspLog', label: 'Ruby: Mostrar Log do Ruby LSP', icon: 'output', run: () => { Panel.show('output'); Panel.append(lspLog.join('')); } },
 ];
 
-const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'gotoTest', 'stop', 'rake', 'bundle.install', 'bundle.update', 'bundle.outdated', 'restartLsp', 'lspLog'];
+const debugFile = () => Ruby.runFile(Debug.start, 'debugger');
+const openIrb = () => Terminal.create('irb', ws.hasGemfile ? 'bundle exec irb' : 'irb', true);
+
+const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'rerunFailed', 'coverageAll', 'profileFile', 'gotoTest', 'railsRelated', 'railsGenerate', 'railsServer', 'rails.db.migrate', 'irb', 'railsConsole', 'sendToConsole', 'selectRuby', 'typeHierarchy', 'callers', 'codeStyle', 'stop', 'rake', 'bundle.install', 'bundle.update', 'bundle.outdated', 'restartLsp', 'lspLog'];
 
 // "Ctrl+Shift+P" style keys -> handler; compared with the normalized key of each keydown.
 const keymap = new Map(commands.filter(c => c.key).map(c => [c.key!.toLowerCase(), c]));
@@ -87,7 +138,7 @@ function renderWelcome() {
   const open = h('button', { className: 'button' }, icon('folder-opened'), ' Abrir pasta');
   open.onclick = () => openFolder();
   $('#welcome').replaceChildren(h('div', { className: 'welcome-inner' },
-    h('h1', {}, 'Rubaxe'), h('p', { className: 'setting-desc' }, 'IDE rápida para Ruby'),
+    h('img', { className: 'welcome-logo', src: '../../assets/logo.png', alt: 'Rubaxe' }), h('p', { className: 'setting-desc' }, 'IDE rápida para Ruby'),
     ws.root ? '' : open,
     shortcut('Ir para arquivo', 'Ctrl+P'), shortcut('Paleta de comandos', 'Ctrl+Shift+P'), shortcut('Pesquisar no projeto', 'Ctrl+Shift+F'),
     shortcut('Executar arquivo Ruby', 'Ctrl+F5'), shortcut('Ir para teste', 'Ctrl+Shift+T'), shortcut('Configurações', 'Ctrl+,')));
@@ -108,11 +159,12 @@ function setStatus(el: HTMLElement, iconName: string, text: string, tooltip = ''
 }
 
 function initStatusBar() {
+  statusItem('sb-branch', 'left', () => Git.switchBranch()).hidden = true;
   statusItem('sb-lsp', 'left', () => quickPick({
     placeholder: 'Ruby LSP',
     items: () => [commands.find(c => c.id === 'restartLsp')!, commands.find(c => c.id === 'lspLog')!].map(c => ({ label: c.label, icon: c.icon, run: c.run })),
   }));
-  statusItem('sb-ruby', 'left', () => Editor.openSettings());
+  statusItem('sb-ruby', 'left', () => Ruby.selectInterpreter(() => onSettingChange('ruby.path')));
   const problems = statusItem('sb-problems', 'left', () => Panel.show('problems'));
   problems.append(icon('error'), h('span', { id: 'sb-errors' }, '0'), icon('warning'), h('span', { id: 'sb-warnings' }, '0'));
   const cursor = statusItem('sb-cursor', 'right', () => { Editor.editor.focus(); void Editor.editor.getAction('editor.action.gotoLine')?.run(); });
@@ -166,6 +218,8 @@ async function openFolder(path?: string) {
   ws.root = target;
   ws.files = await api.listFiles(target);
   ws.hasGemfile = await api.exists(abs('Gemfile'));
+  ws.isRails = await api.exists(abs('config/application.rb')) && await api.exists(abs('bin/rails'));
+  Rails.resetRails();
   document.title = `${basename(target)} — Rubaxe`;
   $('#command-center-label').textContent = basename(target);
   Features.set('window.lastFolder', target);
@@ -175,6 +229,8 @@ async function openFolder(path?: string) {
   await renderExplorer();
   startLsp();
   void refreshInterpreter();
+  void Git.refresh();
+  void Ruby.loadGems($('#gems-body'));
 }
 
 // ---------- quick open ----------
@@ -237,13 +293,21 @@ function onSettingChange(key: string) {
   if (key === 'features.documentSymbols') void renderOutline();
   if (key === 'ruby.lspPath' && ws.root) startLsp();
   if (key === 'ruby.path' || key === 'features.sdk') void refreshInterpreter();
+  if (key === 'ruby.path') void Ruby.applyRubyBin().then(() => { if (ws.root) startLsp(); });
+  if (key === 'features.gemsView') void Ruby.loadGems($('#gems-body'));
 }
 
 // ---------- boot ----------
 
 function defineTheme() {
   monaco.editor.defineTheme('rubaxe-dark', {
-    base: 'vs-dark', inherit: true, rules: [],
+    base: 'vs-dark', inherit: true,
+    // Semantic token types from the Ruby LSP (VS Code Dark Modern colors).
+    rules: [
+      { token: 'namespace', foreground: '4EC9B0' }, { token: 'class', foreground: '4EC9B0' }, { token: 'type', foreground: '4EC9B0' },
+      { token: 'method', foreground: 'DCDCAA' }, { token: 'function', foreground: 'DCDCAA' }, { token: 'parameter', foreground: '9CDCFE' },
+      { token: 'variable', foreground: '9CDCFE' }, { token: 'property', foreground: '9CDCFE' }, { token: 'enumMember', foreground: '4FC1FF' },
+    ],
     colors: {
       'editor.background': '#1F1F1F', 'editor.foreground': '#CCCCCC', 'editorLineNumber.foreground': '#6E7681',
       'editorLineNumber.activeForeground': '#CCCCCC', 'editorWidget.background': '#202020', 'editorWidget.border': '#313131',
@@ -256,14 +320,23 @@ function defineTheme() {
 
 async function boot() {
   Features.load(await api.loadSettings());
+  await Ruby.applyRubyBin();
   defineTheme();
   Editor.createEditor(container => Features.render(container, onSettingChange));
   Lsp.registerProviders();
+  registerIntentions(id => Features.on(id));
   Panel.initPanel(Ruby.stopAll);
   initExplorer(() => openFolder());
   initSearch();
+  Debug.initDebug(() => debugFile());
+  Tests.initTests();
+  Rails.initRails();
+  Terminal.initTerminal();
+  Git.initGit();
   initStatusBar();
   renderRubyView();
+  $('#gems-refresh').onclick = e => { e.stopPropagation(); void Ruby.loadGems($('#gems-body')); };
+  $('#gems-header').onclick = () => { const b = $('#gems-body'); b.hidden = !b.hidden; $('#gems-header').firstElementChild!.className = `codicon codicon-chevron-${b.hidden ? 'right' : 'down'}`; };
   renderWelcome();
   setCloseHandler(() => { if (Editor.editor.getModel()) Editor.editor.focus(); });
 
@@ -288,6 +361,7 @@ async function boot() {
     void cmd.run();
   }, true);
 
+  window.addEventListener('focus', () => void Editor.syncFromDisk());
   api.onCloseRequest(() => {
     const dirty = Editor.tabs.filter(t => t.dirty).map(t => t.title);
     if (!dirty.length || confirm(`Há alterações não salvas em: ${dirty.join(', ')}.\nFechar o Rubaxe e descartar as alterações?`)) api.confirmClose();

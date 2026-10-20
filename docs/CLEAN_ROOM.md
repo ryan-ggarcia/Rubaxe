@@ -54,7 +54,7 @@ As extrações brutas ficaram fora do repositório e não são versionadas.
 (≥ 15 caracteres) e nomes de classes (≥ 12 caracteres) do plugin Ruby do RubyMine. Exige o RubyMine instalado:
 
 ```sh
-python tools/cleanroom_check.py "C:/Program Files/JetBrains/RubyMine 2026.2.3/plugins/ruby/lib" .
+python tools/cleanroom_check.py "C:/Program Files/JetBrains/RubyMine 2026.2.1/plugins/ruby/lib" .
 ```
 
 | Data | Strings | Classes | Ocorrências | Controle positivo |

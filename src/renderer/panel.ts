@@ -4,9 +4,10 @@ import * as Editor from './editor.ts';
 
 const MAX_OUTPUT = 200_000; // long-running servers would otherwise grow the DOM forever
 let output = '';
+type Which = 'problems' | 'output' | 'debug' | 'terminal';
 
 export function initPanel(onStop: () => void) {
-  document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => { el.onclick = () => show(el.dataset.panel as 'problems' | 'output'); });
+  document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => { el.onclick = () => show(el.dataset.panel as Which); });
   $('#panel-stop').onclick = onStop;
   $('#panel-clear').onclick = () => { output = ''; $('#panel-output').textContent = ''; };
   $('#panel-close').onclick = () => toggle(false);
@@ -18,11 +19,14 @@ export function toggle(visible = $('#panel').hidden) {
   $('#sash-panel').hidden = !visible;
 }
 
-export function show(which: 'problems' | 'output') {
+export function show(which: Which) {
   toggle(true);
   document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => el.classList.toggle('active', el.dataset.panel === which));
   $('#panel-problems').hidden = which !== 'problems';
   $('#panel-output').hidden = which !== 'output';
+  $('#panel-debug').hidden = which !== 'debug';
+  $('#panel-terminal').hidden = which !== 'terminal';
+  $('#terminal-actions').hidden = which !== 'terminal';
   $('#panel-stop').hidden = which !== 'output';
   $('#panel-clear').hidden = which !== 'output';
 }

@@ -5,19 +5,55 @@
   "main": "dist/main.js",
   "private": true,
   "scripts": {
-    "build": "esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist && esbuild src/renderer/app.ts --bundle --format=iife --outfile=dist/renderer.js",
+    "build": "esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outdir=dist && esbuild src/renderer/app.ts --bundle --format=iife --outfile=dist/renderer.js",
     "typecheck": "tsc",
     "start": "npm run build && electron .",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@vscode/codicons": "0.0.45",
-    "monaco-editor": "0.57.0"
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "monaco-editor": "0.57.0",
+    "node-pty": "1.1.0"
   },
   "devDependencies": {
     "@types/node": "24.19.1",
     "electron": "44.5.1",
+    "electron-builder": "26.17.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
+  },
+  "build": {
+    "appId": "dev.rubaxe.ide",
+    "productName": "Rubaxe",
+    "icon": "assets/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "src/renderer/**",
+      "src/ruby/**",
+      "assets/**",
+      "!src/renderer/**/*.ts",
+      "!**/*.pdb",
+      "!node_modules/monaco-editor/{esm,dev}/**",
+      "!node_modules/node-pty/{deps,src,scripts}/**"
+    ],
+    "asarUnpack": [
+      "src/ruby/**",
+      "node_modules/node-pty/**"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "npmRebuild": false
   }
 }

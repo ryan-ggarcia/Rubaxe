@@ -16,9 +16,14 @@ for j in glob.glob(os.path.join(rm_root, '**', '*.jar'), recursive=True):
             if len(name) >= 12:
                 classes.add(name)
 
+# A wrong RubyMine path finds no jars and would report a meaningless "hits: 0".
+if not strings: sys.exit(f"no RubyMine strings found under {rm_root}")
+
 hits = []
 for path in glob.glob(os.path.join(repo, '**', '*'), recursive=True):
-    if 'node_modules' in path or '.git' in path.split(os.sep) or not os.path.isfile(path):
+    # Build outputs (dist, release) hold bundled third-party code and binaries, not our sources.
+    parts = path.split(os.sep)
+    if 'node_modules' in path or {'.git', 'dist', 'release'} & set(parts) or not os.path.isfile(path):
         continue
     text = open(path, encoding='utf-8', errors='ignore').read()
     low = text.lower()

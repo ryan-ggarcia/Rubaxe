@@ -34,5 +34,5 @@ export function notify(message: string, kind: 'info' | 'error' = 'info') {
 }
 
 // Shared workspace state; root is '' until a folder is open.
-export const ws = { root: '', files: [] as string[], hasGemfile: false, sep: api.platform === 'win32' ? '\\' : '/' };
+export const ws = { root: '', files: [] as string[], hasGemfile: false, isRails: false, sep: api.platform === 'win32' ? '\\' : '/' };
 export const abs = (rel: string) => ws.root + ws.sep + rel.split('/').join(ws.sep);

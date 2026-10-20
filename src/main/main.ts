@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { spawn, type ChildProcess } from 'node:child_process';
+import net from 'node:net';
+import os from 'node:os';
+import type { IPty } from 'node-pty';
 import { createParser, frame } from './lsp.ts';
 import { quote } from './shell.ts';
 import type { SearchHit } from './preload.ts';
@@ -13,11 +16,51 @@ let win: BrowserWindow | undefined;
 let lsp: ChildProcess | null = null;
 let allowClose = false;
 const runs = new Map<string, ChildProcess>();
+let debug: { proc?: ChildProcess; sock?: net.Socket } = {};
+const ptys = new Map<string, IPty>();
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...args); };
 
-const shellSpawn = (cmd: string, args: string[], cwd: string) =>
-  spawn([cmd, ...args].map(quote).join(' '), { cwd, shell: true, env: process.env });
+let rubyBin = ''; // bin dir of the interpreter chosen in Rubaxe, put first on PATH for every child process
+
+// extra.RUBYOPT is appended to the user's own RUBYOPT instead of replacing it.
+function childEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const env = { ...process.env, ...extra } as Record<string, string>;
+  if (extra.RUBYOPT) env.RUBYOPT = [process.env.RUBYOPT, extra.RUBYOPT].filter(Boolean).join(' ');
+  // Windows spells it "Path"; adding a second "PATH" key would leave which one wins to chance.
+  const key = Object.keys(env).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
+  if (rubyBin) env[key] = rubyBin + path.delimiter + (env[key] ?? '');
+  return env;
+}
+
+const shellSpawn = (cmd: string, args: string[], cwd: string, extra: Record<string, string> = {}) =>
+  spawn([cmd, ...args].map(quote).join(' '), { cwd, shell: true, env: childEnv(extra) });
+
+// Interpreters from PATH and the usual version-manager folders (rbenv, rvm, asdf, chruby, mise, RubyInstaller).
+async function findRubies(): Promise<{ path: string; manager: string }[]> {
+  const home = os.homedir(), exe = process.platform === 'win32' ? 'ruby.exe' : 'ruby';
+  const versions = async (dir: string, manager: string, sub = 'bin') =>
+    (await fs.readdir(dir).catch(() => [] as string[])).map(v => ({ path: path.join(dir, v, sub, exe), manager }));
+  const pathDirs = (process.env.PATH ?? process.env.Path ?? '').split(path.delimiter).filter(Boolean).map(d => ({ path: path.join(d, exe), manager: 'PATH' }));
+  const roots = process.platform === 'win32'
+    ? (await fs.readdir('C:\\').catch(() => [] as string[])).filter(d => /^Ruby\d/i.test(d)).map(d => ({ path: path.join('C:\\', d, 'bin', exe), manager: 'RubyInstaller' }))
+    : [];
+  // Manager folders first so a Ruby that is also on PATH keeps its manager's name after de-duplication.
+  const all = [
+    ...roots,
+    ...await versions(path.join(home, '.rbenv', 'versions'), 'rbenv'), ...await versions(path.join(home, '.rvm', 'rubies'), 'rvm'),
+    ...await versions(path.join(home, '.asdf', 'installs', 'ruby'), 'asdf'), ...await versions(path.join(home, '.rubies'), 'chruby'),
+    ...await versions('/opt/rubies', 'chruby'), ...await versions(path.join(home, '.local', 'share', 'mise', 'installs', 'ruby'), 'mise'),
+    ...pathDirs,
+  ];
+  const seen = new Set<string>();
+  const out: { path: string; manager: string }[] = [];
+  for (const r of all) {
+    const real = await fs.realpath(r.path).catch(() => '');
+    if (real && !seen.has(real.toLowerCase())) { seen.add(real.toLowerCase()); out.push(r); }
+  }
+  return out;
+}
 
 function kill(child: ChildProcess) {
   // child is the shell; on Windows only taskkill /T reaches the ruby process underneath it.
@@ -72,6 +115,62 @@ function stopLsp() {
   kill(child);
 }
 
+// Debugger: rdbg (gem debug) opens a TCP port and speaks DAP on it, framed like LSP.
+function dapConnect(port: number, host: string) {
+  const sock = net.connect(port, host);
+  debug.sock = sock;
+  sock.on('connect', () => send('dapConnected'));
+  sock.on('data', createParser(msg => send('dapMessage', msg)));
+  sock.on('error', e => send('debugOutput', `${e.message}\n`));
+  sock.on('close', () => { if (debug.sock === sock) { debug.sock = undefined; if (!debug.proc) send('debugEnd'); } });
+}
+
+function debugStop() {
+  const { proc, sock } = debug;
+  debug = {};
+  sock?.destroy();
+  if (proc) kill(proc);
+}
+
+const freePort = () => new Promise<number>((resolve, reject) => {
+  const srv = net.createServer().listen(0, '127.0.0.1', () => { const { port } = srv.address() as net.AddressInfo; srv.close(() => resolve(port)); });
+  srv.on('error', reject);
+});
+
+ipcMain.handle('debugLaunch', async (_e, cmd: string, args: string[], cwd: string) => {
+  debugStop();
+  const port = await freePort();
+  // -c runs any command (ruby, bundle exec rspec...) with the debugger loaded through RUBYOPT.
+  const proc = shellSpawn('rdbg', ['--open', '--host=127.0.0.1', `--port=${port}`, '-c', '--', cmd, ...args], cwd);
+  debug = { proc };
+  let attached = false;
+  const out = (d: Buffer) => {
+    const text = d.toString();
+    send('debugOutput', text);
+    if (!attached && text.includes('can attach via TCP/IP')) { attached = true; dapConnect(port, '127.0.0.1'); }
+  };
+  proc.stdout!.on('data', out);
+  proc.stderr!.on('data', out);
+  proc.on('error', e => send('debugOutput', e.message + '\n'));
+  proc.on('close', code => { if (debug.proc === proc) { debug.sock?.destroy(); debug = {}; send('debugOutput', `\n[encerrado com código ${code}]\n`); send('debugEnd'); } });
+});
+ipcMain.handle('debugAttach', (_e, host: string, port: number) => { debugStop(); dapConnect(port, host); });
+ipcMain.handle('debugStop', () => debugStop());
+ipcMain.on('dapSend', (_e, msg: unknown) => { debug.sock?.write(frame(msg)); });
+
+// Terminal: real pseudo-terminals (ConPTY on Windows) so shells, irb and rails console behave interactively.
+ipcMain.handle('ptySpawn', async (_e, id: string, cwd: string, cols: number, rows: number, shellPath: string) => {
+  const pty = await import('node-pty'); // native module: loaded only when the first terminal opens
+  const file = shellPath || (process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash');
+  const p = pty.spawn(file, [], { name: 'xterm-256color', cols, rows, cwd: cwd || os.homedir(), env: childEnv() });
+  ptys.set(id, p);
+  p.onData(d => send('ptyData', id, d));
+  p.onExit(({ exitCode }) => { ptys.delete(id); send('ptyExit', id, exitCode); });
+});
+ipcMain.on('ptyWrite', (_e, id: string, data: string) => ptys.get(id)?.write(data));
+ipcMain.on('ptyResize', (_e, id: string, cols: number, rows: number) => { if (cols > 0 && rows > 0) ptys.get(id)?.resize(cols, rows); });
+ipcMain.handle('ptyKill', (_e, id: string) => ptys.get(id)?.kill());
+
 ipcMain.handle('openFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
@@ -87,6 +186,19 @@ ipcMain.handle('createPath', async (_e, p: string, isDir: boolean) => {
   await fs.mkdir(path.dirname(p), { recursive: true });
   await fs.writeFile(p, '', { flag: 'wx' });
 });
+ipcMain.handle('openFileDialog', async () => {
+  const r = await dialog.showOpenDialog(win!, { properties: ['openFile'] });
+  return r.canceled ? null : r.filePaths[0];
+});
+// No overwrite: fs.rename silently replaces an existing target on most platforms.
+ipcMain.handle('renamePath', async (_e, from: string, to: string) => {
+  // A case-only rename on a case-insensitive disk finds the same file (same inode) as the target, and is allowed.
+  const [src, dst] = await Promise.all([fs.stat(from, { bigint: true }), fs.stat(to, { bigint: true }).catch(() => null)]);
+  if (dst && (dst.ino !== src.ino || dst.dev !== src.dev)) throw new Error(`${path.basename(to)} já existe`);
+  await fs.rename(from, to);
+});
+// Trash instead of rm so a mistaken delete can be undone from the OS.
+ipcMain.handle('trashPath', (_e, p: string) => shell.trashItem(p));
 ipcMain.handle('exists', (_e, p: string) => fs.access(p).then(() => true, () => false));
 ipcMain.handle('listFiles', (_e, root: string) => walk(root));
 ipcMain.handle('search', (_e, root: string, query: string, opts) => search(root, query, opts));
@@ -98,14 +210,21 @@ ipcMain.handle('exec', (_e, cmd: string, args: string[], cwd: string) => new Pro
   c.on('error', e => resolve({ code: -1, out: e.message }));
   c.on('close', code => resolve({ code, out }));
 }));
-ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string) => {
-  const c = shellSpawn(cmd, args, cwd);
+ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string, env?: Record<string, string>) => {
+  const c = shellSpawn(cmd, args, cwd, env);
   runs.set(id, c);
   c.stdout!.on('data', d => send('runData', id, d.toString()));
   c.stderr!.on('data', d => send('runData', id, d.toString()));
   c.on('error', e => send('runData', id, e.message + '\n'));
   c.on('close', code => { runs.delete(id); send('runExit', id, code); });
 });
+// Fresh directory per run for test reports, coverage and profiles.
+ipcMain.handle('mkTemp', () => fs.mkdtemp(path.join(os.tmpdir(), 'rubaxe-')));
+// shortcut: RUBYOPT cannot quote, so -I<this dir> breaks if Rubaxe lives under a path with spaces; copy helpers to a spaceless dir then.
+// Packaged builds unpack src/ruby next to app.asar (see build.asarUnpack): ruby itself cannot read inside the archive.
+ipcMain.handle('rubyHelpers', () => path.join(__dirname, '..', 'src', 'ruby').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`));
+ipcMain.handle('findRubies', () => findRubies());
+ipcMain.handle('setRubyBin', (_e, dir: string) => { rubyBin = dir; });
 ipcMain.handle('stop', (_e, id: string) => { const c = runs.get(id); if (c) kill(c); });
 // A truncated settings file must not block startup.
 ipcMain.handle('loadSettings', () => fs.readFile(settingsPath(), 'utf8').then(JSON.parse).catch(() => ({})));
@@ -118,6 +237,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: 1400, height: 900, backgroundColor: '#1F1F1F', title: 'Rubaxe',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'), // the logo's mark without the wordmark
     titleBarStyle: 'hidden', titleBarOverlay: { color: '#181818', symbolColor: '#CCCCCC', height: 35 },
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
@@ -143,6 +263,8 @@ ipcMain.handle('confirmClose', () => { allowClose = true; win?.close(); });
 
 app.on('window-all-closed', () => {
   stopLsp();
+  debugStop();
+  ptys.forEach(p => p.kill());
   runs.forEach(kill);
   app.quit();
 });
