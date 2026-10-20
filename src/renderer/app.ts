@@ -288,6 +288,11 @@ async function boot() {
     void cmd.run();
   }, true);
 
+  api.onCloseRequest(() => {
+    const dirty = Editor.tabs.filter(t => t.dirty).map(t => t.title);
+    if (!dirty.length || confirm(`Há alterações não salvas em: ${dirty.join(', ')}.\nFechar o Rubaxe e descartar as alterações?`)) api.confirmClose();
+  });
+
   showView('explorer');
   Panel.show('problems');
   Panel.toggle(false);

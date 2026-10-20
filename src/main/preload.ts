@@ -24,6 +24,8 @@ const api = {
   saveSettings: invoke<void, [settings: unknown]>('saveSettings'),
   lspStart: invoke<void, [cmd: string, cwd: string]>('lspStart'),
   lspStop: invoke<void>('lspStop'),
+  confirmClose: invoke<void>('confirmClose'),
+  onCloseRequest: on<[]>('closeRequest'),
   lspSend: (msg: unknown) => ipcRenderer.send('lspSend', msg),
   onLspMessage: on<[msg: any]>('lspMessage'),
   onLspLog: on<[text: string]>('lspLog'),

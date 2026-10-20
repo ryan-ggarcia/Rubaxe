@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createParser, frame } from './lsp.ts';
+import { quote } from './shell.ts';
 import type { SearchHit } from './preload.ts';
 
 const IGNORED = new Set(['.git', 'node_modules', 'tmp', 'log', '.bundle', 'coverage', '.ruby-lsp', 'vendor']);
@@ -10,12 +11,11 @@ const MAX_FILES = 20000;
 const MAX_HITS = 2000;
 let win: BrowserWindow | undefined;
 let lsp: ChildProcess | null = null;
+let allowClose = false;
 const runs = new Map<string, ChildProcess>();
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...args); };
 
-// .bat shims (bundle, rake, ruby-lsp) only start through a shell on Windows, so every token is quoted.
-const quote = (a: string) => process.platform === 'win32' ? `"${a}"` : `'${a.replace(/'/g, `'\\''`)}'`;
 const shellSpawn = (cmd: string, args: string[], cwd: string) =>
   spawn([cmd, ...args].map(quote).join(' '), { cwd, shell: true, env: process.env });
 
@@ -130,8 +130,16 @@ app.whenReady().then(() => {
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win!.webContents.toggleDevTools();
   });
+  // Let the renderer confirm unsaved changes before the window actually closes.
+  win.on('close', e => {
+    if (allowClose) return;
+    e.preventDefault();
+    win!.webContents.send('closeRequest');
+  });
   win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
 });
+
+ipcMain.handle('confirmClose', () => { allowClose = true; win?.close(); });
 
 app.on('window-all-closed', () => {
   stopLsp();

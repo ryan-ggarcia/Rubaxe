@@ -61,6 +61,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 2 — Arquivos, navegação e busca ★
 - [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo
 - [x] Abrir, editar e salvar (Ctrl+S)
+- [x] Avisar sobre alterações não salvas ao fechar a janela
 - [x] Quick Open de arquivos com busca fuzzy (Ctrl+P)
 - [x] Paleta de comandos (Ctrl+Shift+P / F1) com comandos do Rubaxe e do editor
 - [x] Prefixos do Quick Open: `>` comandos, `:` ir para linha, `#` símbolo no projeto
@@ -68,7 +69,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Visão "Estrutura" do arquivo (outline)
 
 ### Fase 3 — Inteligência Ruby via Ruby LSP ★
-> Implementado, mas **não testado com o Ruby LSP real**: o Ruby desta máquina está corrompido (seção 2). Testado: mensagem de erro quando o LSP não sobe.
+> **Testado com o Ruby LSP real** (projeto sem Gemfile): estrutura/símbolos, autocompletar, diagnósticos ao vivo (Prism) e recuperação. Hover, definição, rename e formatação usam o mesmo round-trip. Correção: o ruby-lsp usa *pull diagnostics* (`textDocument/diagnostic`), não `publishDiagnostics` — o Rubaxe agora puxa os diagnósticos. Em projetos **com Gemfile**, o ruby-lsp monta um bundle próprio que compila gems nativas (prism, io-console): precisa do toolchain C do Ruby (rode `ridk install`).
 
 - [x] Iniciar/reiniciar o Ruby LSP por projeto; progresso de indexação na Status Bar
 - [x] Sincronização incremental de documentos
@@ -85,7 +86,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Mensagem clara quando o Ruby LSP não está instalado
 
 ### Fase 4 — Executar e testar ★
-> Testado: execução com saída em streaming e código de saída, ir para teste ↔ implementação. RSpec/Minitest/Bundler/Rake dependem do Ruby funcionando.
+> **Testado com Ruby real**: executar arquivo (`ruby` → saída `5`), RSpec via `bundle exec rspec` (1 example, 0 failures), Bundler install e Rake (`bundle exec rake hello`). Correção: no Windows o spawn passava cada argumento entre aspas, o que fazia os shims `.bat` (bundle/rake) re-executarem `ruby` como `<cwd>\ruby.exe` e falharem — agora só os tokens com espaço são citados (`src/main/shell.ts`, com teste).
 
 - [x] Executar arquivo Ruby atual (Ctrl+F5) com saída em streaming e botão parar
 - [x] Executar testes do arquivo: RSpec (`bundle exec rspec`), Minitest (`ruby -Itest` / `bin/rails test`)

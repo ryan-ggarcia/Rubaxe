@@ -270,8 +270,24 @@ export function stop() {
   api.lspStop();
 }
 
+const diagTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Ruby LSP uses pull diagnostics (textDocument/diagnostic), not publishDiagnostics, so we request them.
+async function pullDiagnostics(model: M.editor.ITextModel) {
+  const r = await ask('diagnostics', 'textDocument/diagnostic', { textDocument: doc(model) });
+  if (r?.kind === 'full') setDiagnostics(model.uri.toString(), r.items);
+}
+
+function scheduleDiagnostics(model: M.editor.ITextModel) {
+  const uri = model.uri.toString();
+  clearTimeout(diagTimers.get(uri));
+  diagTimers.set(uri, setTimeout(() => pullDiagnostics(model), 500));
+}
+
 function sendOpen(model: M.editor.ITextModel) {
-  if (ready) notify('textDocument/didOpen', { textDocument: { ...doc(model), languageId: 'ruby', version: model.getVersionId(), text: model.getValue() } });
+  if (!ready) return;
+  notify('textDocument/didOpen', { textDocument: { ...doc(model), languageId: 'ruby', version: model.getVersionId(), text: model.getValue() } });
+  void pullDiagnostics(model);
 }
 
 export function didOpen(model: M.editor.ITextModel) {
@@ -279,10 +295,14 @@ export function didOpen(model: M.editor.ITextModel) {
   if (model.getLanguageId() !== 'ruby' || opened.has(uri)) return;
   opened.set(uri, model);
   // Monaco orders changes end-to-start, so they apply in sequence as LSP expects.
-  listeners.set(uri, model.onDidChangeContent(e => ready && notify('textDocument/didChange', {
-    textDocument: { ...doc(model), version: model.getVersionId() },
-    contentChanges: e.changes.map(c => ({ range: lspRange(c.range), text: c.text })),
-  })));
+  listeners.set(uri, model.onDidChangeContent(e => {
+    if (!ready) return;
+    notify('textDocument/didChange', {
+      textDocument: { ...doc(model), version: model.getVersionId() },
+      contentChanges: e.changes.map(c => ({ range: lspRange(c.range), text: c.text })),
+    });
+    scheduleDiagnostics(model);
+  }));
   sendOpen(model);
 }
 
@@ -291,6 +311,8 @@ export function didClose(model: M.editor.ITextModel) {
   if (!opened.delete(uri)) return;
   listeners.get(uri)?.dispose();
   listeners.delete(uri);
+  clearTimeout(diagTimers.get(uri));
+  diagTimers.delete(uri);
   if (ready) notify('textDocument/didClose', { textDocument: doc(model) });
 }
 
@@ -298,7 +320,8 @@ export const isReady = () => ready;
 export const didSave = (model: M.editor.ITextModel) => { if (ready && opened.has(model.uri.toString())) notify('textDocument/didSave', { textDocument: doc(model) }); };
 export const workspaceSymbols = (query: string) => ask<any[]>('workspaceSymbols', 'workspace/symbol', { query });
 export const documentSymbols = async (model: M.editor.ITextModel) => symbols(await ask('documentSymbols', 'textDocument/documentSymbol', { textDocument: doc(model) }));
-export const refreshDiagnostics = () => diagnostics.forEach((list, uri) => setDiagnostics(uri, list));
+// Toggling the flag: pull fresh for open docs when on, clear markers when off.
+export const refreshDiagnostics = () => opened.forEach(m => Features.on('diagnostics') ? void pullDiagnostics(m) : setDiagnostics(m.uri.toString(), []));
 
 api.onLspMessage(onMessage);
 api.onLspLog(text => hooks?.log(text));
