@@ -118,7 +118,9 @@ body.dragging * { pointer-events: none; }
 
 #welcome { display: flex; align-items: center; justify-content: center; }
 .welcome-inner { display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
-.welcome-logo { width: 200px; height: 200px; border-radius: 24px; }
+.welcome-logo { width: 160px; height: 160px; }
+.welcome-inner h1 { font-weight: 700; font-size: 36px; margin: 0; color: #F5F5F5; }
+.welcome-inner h1 span { color: #FF1E3C; } /* "axe" in the logo's red, as in the original wordmark */
 .welcome-inner .button { align-self: flex-start; margin: 8px 0 16px; }
 .shortcut { display: flex; justify-content: space-between; gap: 24px; color: var(--muted); }
 kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #FFFFFF40; border-radius: 3px; padding: 0 5px; font: 11px/18px inherit; color: var(--fg); }

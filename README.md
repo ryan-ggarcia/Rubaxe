@@ -16,6 +16,7 @@ npm start        # compila (esbuild) e abre o Rubaxe
 npm test         # testes unitários
 npm run typecheck
 npm run dist     # instalador Windows em release/
+npm run dist:linux   # AppImage — rode numa máquina Linux (compila o terminal nativo)
 ```
 
 Se o Rubaxe abrir como Node puro (erro `Cannot read properties of undefined (reading 'handle')`), a variável

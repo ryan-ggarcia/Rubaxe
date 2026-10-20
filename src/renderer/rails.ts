@@ -82,7 +82,12 @@ export function generate(destroy = false) {
 }
 
 export const openConsole = () => ready('railsGenerators') && Terminal.create('rails console', `${ruby()} bin/rails console`, true);
-export const server = () => ready('railsGenerators') && Ruby.runCommand(ruby(), ['bin/rails', 'server']);
+// Stopping kills the process tree (taskkill /F on Windows), so Puma never removes its pid file; a stale
+// tmp/pids/server.pid would make the next start fail with "A server is already running". Use a fresh one per run.
+export async function server() {
+  if (!ready('railsGenerators')) return;
+  Ruby.runCommand(ruby(), ['bin/rails', 'server', '--pid', `${await api.mkTemp()}${ws.sep}server.pid`]);
+}
 export const db = (task: string) => ready('railsGenerators') && Ruby.runCommand(ruby(), ['bin/rails', `db:${task}`], { onExit: () => { routes = undefined; } });
 
 // ---------- completion ----------

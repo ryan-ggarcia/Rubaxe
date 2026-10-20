@@ -36,7 +36,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] **Reinstalar o Node.js** — resolvido (Node 26.10, npm 11.19).
 - [x] **Reinstalar o Ruby 4.0** — resolvido (Ruby 4.0.5, gem e bundle funcionando).
 - [x] `gem install ruby-lsp` — instalado (0.26.11).
-- [ ] `ridk install` (toolchain C do RubyInstaller) — necessário para o ruby-lsp em projetos com Gemfile que compilam gems nativas.
+- [x] `ridk install 2 3` (toolchain C do RubyInstaller) — instalado; o ruby-lsp agora monta o bundle de projetos com Gemfile.
 
 ---
 
@@ -73,7 +73,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Visão "Estrutura" do arquivo (outline)
 
 ### Fase 3 — Inteligência Ruby via Ruby LSP ★
-> **Testado com o Ruby LSP real** (projeto sem Gemfile): estrutura/símbolos, autocompletar, diagnósticos ao vivo (Prism) e recuperação. Hover, definição, rename e formatação usam o mesmo round-trip. Correção: o ruby-lsp usa *pull diagnostics* (`textDocument/diagnostic`), não `publishDiagnostics` — o Rubaxe agora puxa os diagnósticos. Em projetos **com Gemfile**, o ruby-lsp monta um bundle próprio que compila gems nativas (prism, io-console): precisa do toolchain C do Ruby (rode `ridk install`).
+> **Testado com o Ruby LSP real** (projeto sem Gemfile): estrutura/símbolos, autocompletar, diagnósticos ao vivo (Prism) e recuperação. Hover, definição, rename e formatação usam o mesmo round-trip. Correção: o ruby-lsp usa *pull diagnostics* (`textDocument/diagnostic`), não `publishDiagnostics` — o Rubaxe agora puxa os diagnósticos. **Projetos com Gemfile (app Rails real) testados** depois do `ridk install`: estrutura, definição, autocompletar e diagnósticos. Correção: no Windows o add-on ruby-lsp-rails travava o servidor inteiro (deadlock do `CreateProcess` com a leitura pendente do stdin) — o Rubaxe envia uma notificação a cada 500 ms para nunca deixar essa leitura parada.
 
 - [x] Iniciar/reiniciar o Ruby LSP por projeto; progresso de indexação na Status Bar
 - [x] Sincronização incremental de documentos
@@ -111,12 +111,12 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Persistência em JSON no diretório do usuário
 
 ### Fase 7 — Depurador
-> **Testado no app real** (CDP, 22 checagens). rdbg abre uma porta TCP e fala DAP; o Rubaxe conecta com `attach { localfs: true }` e pula a parada automática no carregamento. "Sair" (Shift+F11) para no `end` do método (evento de retorno do Ruby) antes de voltar ao chamador — comportamento do rdbg.
+> **Testado no app real** (CDP, 22 checagens). rdbg abre uma porta TCP e fala DAP; o Rubaxe conecta com `attach { localfs: true }` e pula a parada automática no carregamento. O rdbg para no `end` do método ao "Sair" (Shift+F11); o Rubaxe mostra a linha do chamador, como no VS Code.
 
 - [x] Cliente DAP + `rdbg` (`rdbg --open -c -- <comando>`; F5 depura o arquivo atual)
 - [x] Breakpoints (linha, condicional), step over/into/out, continuar — clique na margem ou F9; Shift+clique ou paleta para condição
 - [x] Variáveis, watches, pilha de chamadas, console de avaliação (painel "Console de Depuração")
-- [x] Depurar testes; attach a processo; debug remoto — attach por `host:porta`; remoto só casa breakpoints se os caminhos forem iguais (sem mapeamento de pastas)
+- [x] Depurar testes; attach a processo; debug remoto — `host:porta [pasta no servidor]`; o Rubaxe traduz os caminhos servidor ↔ workspace (testado com o processo rodando em outra pasta)
 
 ### Fase 8 — Testes avançados
 > **Testado no app real** (CDP, 17 checagens) com RSpec e Minitest 6. Sem gems extras: RSpec usa `--format json`; Minitest, cobertura e profiler usam helpers Ruby em `src/ruby/` carregados por `RUBYOPT`.
@@ -125,7 +125,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Reexecutar só os que falharam (RSpec/Rails por `arquivo:linha`, Minitest por nome)
 - [x] Ícone "executar" na margem ao lado de `describe`/`it`/`def test_`/`test "..."`, com cor do último resultado
 - [x] Cobertura no editor — módulo `Coverage` do Ruby (o mesmo que o SimpleCov usa), barra verde/vermelha na margem e resumo no painel
-- [x] Profiler — TracePoint (sem gems), lista por tempo próprio que abre o método; mais lento que vernier/stackprof em código muito quente
+- [x] Profiler — por amostragem (sem sobrecarga medível; stackprof no Linux/macOS, thread de amostragem no Windows, onde stackprof/vernier não compilam) e modo "instrumentado, exato" com contagem de chamadas; a lista abre o `def` do método
 
 ### Fase 9 — Rails
 > **Testado no app real** com um app Rails 8.1 gerado (`rails new --minimal` + scaffold), 14 checagens. Rails 8.1 em Ruby 4.0/Windows: o `rails console` precisa de `gem "fiddle"` no Gemfile do app (exigência do reline, não do Rubaxe).
@@ -146,7 +146,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Hierarquia de tipos (Ruby LSP) e chamadas do método (Shift+Alt+H; montada a partir dos usos, o Ruby LSP não tem call hierarchy)
 - [x] Gerenciadores de versão: seletor de interpretador (rbenv, rvm, asdf, chruby, mise, RubyInstaller, PATH); o escolhido vai na frente do PATH de tudo que o Rubaxe executa
 - [x] Lista de gems (view Ruby) com navegação para o código-fonte
-- [x] RBS e Steep — `.rbs` com realce Ruby e comando `steep check` (Steep não instalado aqui: comando não verificado)
+- [x] RBS e Steep — `.rbs` com realce Ruby e comando `steep check` (testado com Steep 2.1: aponta o erro de tipo contra a assinatura RBS)
 - [x] Console IRB; enviar seleção ao console (Ctrl+Alt+Enter). Pry: rode `pry` no terminal
 - [x] Code style configurável: opções da SPEC viram `.rubocop_rubaxe.yml` (herdado pelo `.rubocop.yml`), aplicado pelo formatador via RuboCop
 
@@ -161,7 +161,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 12 — Qualidade e entrega
 - [x] Testes unitários (`npm test`, 31 testes): convenções de teste, fuzzy, LSP framing, rake, relatórios de teste, Rails, Git, intentions, estilo de código
 - [x] Meta de desempenho — medido: abre em ~0,7 s (0,93 s reabrindo um projeto); digitando num arquivo de 10.007 linhas, mediana 27 ms e pior caso 43 ms por tecla, contando 2 frames de tela
-- [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe Setup <versão>.exe`; app empacotado testado (terminal, helpers Ruby, depurador). Sem assinatura de código: o Windows SmartScreen avisa na primeira execução
+- [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe Setup <versão>.exe`; instalação silenciosa, atalhos, app instalado (pasta com espaços e acentos) e desinstalação testados. Sem assinatura de código (não há certificado nesta máquina): o Windows SmartScreen avisa na primeira execução. Linux: o pacote é gerado, mas o node-pty não tem binário pronto para Linux — gere com `npm run dist:linux` numa máquina Linux (compila o terminal). macOS: só em um Mac (exigência da Apple)
 - [x] Atualizar o README com "como rodar"
 
 ---

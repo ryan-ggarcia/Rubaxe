@@ -48,7 +48,8 @@ const commands: Command[] = [
   { id: 'coverageFile', label: 'Testes: Executar Testes do Arquivo com Cobertura', icon: 'run-coverage', run: () => Tests.runWithCoverage(() => Ruby.runTests()) },
   { id: 'hideCoverage', label: 'Testes: Ocultar Cobertura', icon: 'eye-closed', run: () => Tests.hideCoverage() },
   { id: 'testsView', label: 'Exibir: Testes', icon: 'beaker', run: () => showView('tests') },
-  { id: 'profileFile', label: 'Ruby: Perfilar Arquivo (profiler)', icon: 'flame', run: () => Ruby.runFile(Tests.profile, 'profiler') },
+  { id: 'profileFile', label: 'Ruby: Perfilar Arquivo (amostragem)', icon: 'flame', run: () => Ruby.runFile(Tests.profile, 'profiler') },
+  { id: 'profileExact', label: 'Ruby: Perfilar Arquivo (instrumentado, exato)', icon: 'flame', run: () => Ruby.runFile((cmd, args) => Tests.profile(cmd, args, true), 'profiler') },
   { id: 'gotoTest', label: 'Ruby: Ir para Teste / Implementação', key: 'Ctrl+Shift+T', icon: 'go-to-file', run: () => Ruby.gotoTest() },
   { id: 'stop', label: 'Ruby: Parar Execução', key: 'Ctrl+F2', icon: 'debug-stop', run: () => Ruby.stopAll() },
   { id: 'rake', label: 'Rake: Executar Tarefa...', icon: 'tools', run: () => Ruby.rakeTasks() },
@@ -138,7 +139,7 @@ function renderWelcome() {
   const open = h('button', { className: 'button' }, icon('folder-opened'), ' Abrir pasta');
   open.onclick = () => openFolder();
   $('#welcome').replaceChildren(h('div', { className: 'welcome-inner' },
-    h('img', { className: 'welcome-logo', src: '../../assets/logo.png', alt: 'Rubaxe' }), h('p', { className: 'setting-desc' }, 'IDE rápida para Ruby'),
+    h('img', { className: 'welcome-logo', src: '../../assets/logo.png', alt: '' }), h('h1', {}, 'Rub', h('span', {}, 'axe')), h('p', { className: 'setting-desc' }, 'IDE rápida para Ruby'),
     ws.root ? '' : open,
     shortcut('Ir para arquivo', 'Ctrl+P'), shortcut('Paleta de comandos', 'Ctrl+Shift+P'), shortcut('Pesquisar no projeto', 'Ctrl+Shift+F'),
     shortcut('Executar arquivo Ruby', 'Ctrl+F5'), shortcut('Ir para teste', 'Ctrl+Shift+T'), shortcut('Configurações', 'Ctrl+,')));

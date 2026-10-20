@@ -9,7 +9,8 @@
     "typecheck": "tsc",
     "start": "npm run build && electron .",
     "test": "node --test \"test/**/*.test.ts\"",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder --win nsis",
+    "dist:linux": "npm run build && electron-builder --linux AppImage -c.npmRebuild=true"
   },
   "dependencies": {
     "@vscode/codicons": "0.0.45",

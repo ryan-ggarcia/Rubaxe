@@ -28,11 +28,11 @@ export async function run(cmd: string, args: string[], fw: Framework) {
   const rubyopt: string[] = [];
   const env: Record<string, string> = {};
   if (fw === 'rspec') args = [...args, '--format', 'progress', '--format', 'json', '--out', report];
-  else { rubyopt.push(`-I${lib}`, '-rrubaxe_minitest'); env.RUBAXE_TEST_REPORT = report; }
+  else { rubyopt.push('-rrubaxe_minitest'); env.RUBAXE_TEST_REPORT = report; }
   const cov = withCoverage;
   withCoverage = false;
-  if (cov) { rubyopt.push(`-I${lib}`, '-rrubaxe_coverage'); env.RUBAXE_COVERAGE = dir; }
-  if (rubyopt.length) env.RUBYOPT = rubyopt.join(' ');
+  if (cov) { rubyopt.push('-rrubaxe_coverage'); env.RUBAXE_COVERAGE = dir; }
+  if (rubyopt.length) Object.assign(env, { RUBYOPT: rubyopt.join(' '), RUBYLIB: lib });
   const targets = args.filter(a => /_(spec|test)\.rb(:\d+)?$/.test(a));
   const partial = args.some(a => /:\d+$/.test(a)) || args.includes('-n');
   Ruby.runCommand(cmd, args, { env, onExit: () => void finish(report, dir, cov, targets.length === 0 && !partial, partial) });
@@ -165,32 +165,37 @@ function renderTree() {
 
 // ---------- profiler ----------
 
-export async function profile(cmd: string, args: string[]) {
+// Sampling by default (near-zero overhead); exact = TracePoint, every call counted but much slower on call-heavy code.
+export async function profile(cmd: string, args: string[], exact = false) {
   const dir = await api.mkTemp();
   const out = `${dir}${ws.sep}profile.json`;
   Ruby.runCommand(cmd, args, {
-    env: { RUBYOPT: `-I${await helperDir()} -rrubaxe_profile`, RUBAXE_PROFILE: out },
+    // A 1 ms thread time slice lets the sampler thread take the GVL between the program's own slices.
+    env: { RUBYOPT: '-rrubaxe_profile', RUBYLIB: await helperDir(), RUBAXE_PROFILE: out, RUBAXE_PROFILE_MODE: exact ? 'trace' : 'sample', RUBY_THREAD_TIMESLICE: '1' },
     onExit: () => void showProfile(out),
   });
 }
 
-interface ProfileRow { name: string; file: string; line: number; calls: number; total_ms: number; self_ms: number }
+interface ProfileRow { name: string; file: string; line: number; calls: number | null; total_ms: number; self_ms: number }
 
 async function showProfile(out: string) {
-  let rows: ProfileRow[];
+  let rows: ProfileRow[], mode: string, samples: number | null;
   try {
-    rows = JSON.parse(await api.readFile(out));
+    ({ rows, mode, samples } = JSON.parse(await api.readFile(out)));
   } catch {
     return notify('O profiler não gerou resultados (o programa falhou ao iniciar?).', 'error');
   }
   const where = (r: ProfileRow) => `${relativeTo(ws.root, r.file) ?? r.file}:${r.line}`;
-  Panel.append(`\nProfiler (tempo próprio, top 20):\n${rows.slice(0, 20).map(r =>
-    `  ${r.self_ms.toFixed(1).padStart(9)} ms  ${r.total_ms.toFixed(1).padStart(9)} ms total  ${String(r.calls).padStart(7)}x  ${r.name}  ${where(r)}`).join('\n')}\n`);
+  const calls = (r: ProfileRow) => r.calls === null ? '' : `${r.calls}x`; // sampling does not count calls
+  const how = mode === 'trace' ? 'instrumentado: contagem exata, tempos inflados pela medição' : `amostragem${mode === 'stackprof' ? ' com stackprof' : ''}, ${samples} amostras`;
+  if (mode !== 'trace' && (samples ?? 0) < 50) notify('Poucas amostras (programa curto): use "Perfilar Arquivo (instrumentado, exato)" para resultados mais precisos.');
+  Panel.append(`\nProfiler (tempo próprio, top 20 — ${how}):\n${rows.slice(0, 20).map(r =>
+    `  ${r.self_ms.toFixed(1).padStart(9)} ms  ${r.total_ms.toFixed(1).padStart(9)} ms total  ${calls(r).padStart(7)}  ${r.name}  ${where(r)}`).join('\n')}\n`);
   quickPick({
     placeholder: 'Profiler: métodos por tempo próprio (Enter abre o código)',
     items: q => rows.filter(r => r.name.toLowerCase().includes(q.toLowerCase())).map(r => ({
       label: r.name, icon: 'flame',
-      description: `${r.self_ms.toFixed(1)} ms próprio · ${r.total_ms.toFixed(1)} ms total · ${r.calls}x · ${where(r)}`,
+      description: [`${r.self_ms.toFixed(1)} ms próprio`, `${r.total_ms.toFixed(1)} ms total`, calls(r), where(r)].filter(Boolean).join(' · '),
       // <internal:...> frames have no file to open
       run: () => { if (!r.file.startsWith('<')) void Editor.openFile(/^([A-Za-z]:|\/)/.test(r.file) ? r.file : abs(r.file), { lineNumber: r.line, column: 1 }); },
     })),

@@ -34,8 +34,11 @@ Verificação: typecheck limpo, 31 testes unitários, clean room 0 ocorrências 
 3. **Diagnósticos:** o ruby-lsp usa *pull diagnostics* (`textDocument/diagnostic`), não `publishDiagnostics` — o Rubaxe agora puxa os diagnósticos.
 4. **Caminhos no Windows:** o `fsPath` do Monaco põe a letra do drive em minúscula (`c:\`), o explorer não (`C:\`) — comparações de caminho agora ignoram caixa no Windows.
 5. **Clean room vazio:** o verificador apontava para uma versão do RubyMine que não existe nesta máquina e dizia "0 ocorrências" sem ter lido nada — agora falha quando não acha os JARs.
-6. **Enviar ao console:** o código digitado antes do IRB terminar de iniciar era perdido — agora espera o prompt.
-7. Mais 9 achados de uma revisão (perda de dados ao fechar, progresso do LSP, abas fantasmas, etc.), todos corrigidos.
+6. **Caminhos com espaços/acentos:** cobertura, profiler e relatório do Minitest passavam a pasta dos helpers no `RUBYOPT`, que não aceita aspas — agora vai no `RUBYLIB`; testado com o Rubaxe instalado em `Apps de Teste ção`.
+7. **Ruby LSP travado em apps Rails (Windows):** o add-on ruby-lsp-rails cria um processo enquanto outra thread espera no stdin; no Windows o `CreateProcess` fica bloqueado e congela o servidor (indexação parada em 0%). O Rubaxe envia uma notificação inofensiva a cada 500 ms — indexação de um app Rails cai de "nunca" para ~17 s.
+8. **Profiler distorcia os números:** o TracePoint deixava um programa 24× mais lento; agora o padrão é amostragem (sem sobrecarga medível) e o modo instrumentado fica como opção.
+9. **Enviar ao console:** o código digitado antes do IRB terminar de iniciar era perdido — agora espera o prompt.
+10. Mais 9 achados de uma revisão (perda de dados ao fechar, progresso do LSP, abas fantasmas, etc.), todos corrigidos.
 
 ## Organização em agentes (Claude Code)
 
@@ -43,8 +46,8 @@ Papéis em [`.claude/agents/`](../.claude/agents): **frontend** (`src/renderer`)
 
 ## Pendências
 
-- **Ambiente:** o toolchain C do Ruby está incompleto (rode `ridk install`); sem ele, o ruby-lsp não monta o bundle de projetos **com Gemfile**. Apps Rails 8.1 em Ruby 4.0/Windows precisam de `gem "fiddle"` no Gemfile para o `rails console`.
+- **Ambiente:** apps Rails 8.1 em Ruby 4.0/Windows precisam de `gem "fiddle"` no Gemfile para o `rails console`.
 - **Adiados de propósito (sem pedido concreto, custo alto):** inspeções próprias além do RuboCop, rename que entende Rails, cliente HTTP, ferramentas de banco de dados, tema claro.
-- **Entrega:** assinatura de código do instalador; builds para macOS/Linux não testados.
+- **Entrega:** assinatura de código do instalador (precisa de um certificado); Linux: gerar com `npm run dist:linux` numa máquina Linux e testar; macOS: gerar e testar num Mac.
 
 Detalhe completo das fases em [CHECKLIST.md](CHECKLIST.md).

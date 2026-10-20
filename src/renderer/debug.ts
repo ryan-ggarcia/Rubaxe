@@ -11,6 +11,10 @@ interface Var { name: string; value: string; type?: string; variablesReference: 
 
 let state: 'off' | 'running' | 'paused' = 'off';
 let seq = 1, threadId = 1, skipEntry = false, localfs = true;
+let steppedOutOf: string | undefined; // frame name when Step Out was pressed
+// Remote attach: project folder on the server <-> this workspace. Translated here because the debug gem's own
+// localfsMap splits on every ':' and cannot hold a Windows path such as C:\proj.
+let pathMap: { remote: string; local: string } | undefined;
 let frames: Frame[] = [];
 let frame: Frame | undefined;
 let current: { model: M.editor.ITextModel; ids: string[] } | undefined;
@@ -21,6 +25,9 @@ const watches: string[] = [];
 let consoleText = '';
 
 const pathOf = (key: string) => monaco.Uri.parse(key).fsPath;
+const fold = (p: string) => api.platform === 'win32' ? p.toLowerCase() : p;
+const toRemote = (p: string) => pathMap && fold(p).startsWith(fold(pathMap.local)) ? pathMap.remote + p.slice(pathMap.local.length).replace(/\\/g, '/') : p;
+const toLocal = (p: string) => pathMap && p.startsWith(pathMap.remote) ? pathMap.local + p.slice(pathMap.remote.length).split('/').join(ws.sep) : p;
 
 function req(command: string, args: unknown = {}): Promise<any> {
   if (state === 'off') return Promise.reject(new Error('Nenhuma sessão de depuração.'));
@@ -62,7 +69,7 @@ function trackLines(model: M.editor.ITextModel) {
 async function sendBreakpoints(key: string) {
   if (state === 'off') return;
   const list = bps.get(key) ?? [];
-  await req('setBreakpoints', { source: { path: pathOf(key) }, breakpoints: list.map(b => ({ line: b.line, condition: b.condition })) }).catch(e => log(`${e.message}\n`));
+  await req('setBreakpoints', { source: { path: toRemote(pathOf(key)) }, breakpoints: list.map(b => ({ line: b.line, condition: b.condition })) }).catch(e => log(`${e.message}\n`));
 }
 
 function setBreakpoint(model: M.editor.ITextModel, line: number, bp: Bp | null) {
@@ -109,20 +116,23 @@ export async function start(cmd: string, args: string[]) {
   Panel.show('debug');
   setState('running');
   localfs = true;
+  pathMap = undefined;
   await api.debugLaunch(cmd, args, ws.root);
 }
 
 export async function attach() {
-  const target = await prompt('Anexar ao rdbg em host:porta (inicie o processo com rdbg --open --port=PORTA)', '127.0.0.1:12345');
-  const m = target && /^(.+):(\d+)$/.exec(target);
+  const target = await prompt('Anexar: host:porta [pasta do projeto no servidor] — ex.: 10.0.0.5:12345 /app (processo iniciado com rdbg --open --port=PORTA)', '127.0.0.1:12345');
+  const m = target && /^([^\s:]+):(\d+)(?:\s+(.+))?$/.exec(target.trim());
   if (!m) return;
   if (state !== 'off') await stop();
   consoleText = '';
   log(`> anexar ${target}\n`);
   Panel.show('debug');
   setState('running');
-  // Breakpoint paths only match when the debuggee sees the same files (same machine).
-  localfs = ['127.0.0.1', 'localhost'].includes(m[1]);
+  // Without a folder map, breakpoint paths only match when the debuggee sees the same files (same machine).
+  pathMap = m[3] ? { remote: m[3].replace(/\\/g, '/').replace(/\/?$/, '/'), local: ws.root + ws.sep } : undefined;
+  localfs = !!pathMap || ['127.0.0.1', 'localhost'].includes(m[1]);
+  if (!localfs) log('Aviso: host remoto sem pasta do projeto; os breakpoints só funcionam se os caminhos forem iguais.\n');
   await api.debugAttach(m[1], Number(m[2]));
 }
 
@@ -150,6 +160,7 @@ export const stepInto = () => state === 'paused' && step('stepIn');
 export const stepOut = () => state === 'paused' && step('stepOut');
 
 function step(command: string) {
+  steppedOutOf = command === 'stepOut' ? frame?.name : undefined;
   setState('running');
   clearCurrentLine();
   void req(command, { threadId }).catch(e => log(`${e.message}\n`));
@@ -182,8 +193,11 @@ async function onEvent(event: string, body: any) {
 
 async function refresh() {
   const { stackFrames } = await req('stackTrace', { threadId, startFrame: 0, levels: 50 }).catch(() => ({ stackFrames: [] }));
-  frames = stackFrames;
-  await selectFrame(frames.find(f => f.source?.path) ?? frames[0]);
+  frames = stackFrames.map((f: Frame) => f.source?.path ? { ...f, source: { ...f.source, path: toLocal(f.source.path) } } : f);
+  // rdbg's Step Out stops on the method's return (its `end` line); show the caller instead, as users expect.
+  const out = steppedOutOf && frames[0]?.name === steppedOutOf && frames[1]?.source?.path ? frames[1] : undefined;
+  steppedOutOf = undefined;
+  await selectFrame(out ?? frames.find(f => f.source?.path) ?? frames[0]);
 }
 
 async function selectFrame(f: Frame | undefined) {

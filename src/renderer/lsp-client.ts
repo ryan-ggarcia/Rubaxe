@@ -20,6 +20,7 @@ const COMPLETION_KINDS = ['Text', 'Method', 'Function', 'Constructor', 'Field', 
 let nextId = 1, ready = false, generation = 0;
 let hooks: Hooks | undefined;
 let semanticRegistered = false;
+let keepAlive: ReturnType<typeof setInterval> | undefined;
 const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
 const opened = new Map<string, M.editor.ITextModel>();
 const listeners = new Map<string, { dispose(): void }>();
@@ -279,6 +280,10 @@ export async function start(root: string, command: string, h: Hooks) {
   if (mine !== generation) return;
   registerSemanticTokens(init?.capabilities?.semanticTokensProvider?.legend);
   notify('initialized', {});
+  // Windows deadlock: while ruby-lsp's reader thread waits on stdin, a process spawned by another thread (e.g. the
+  // ruby-lsp-rails server) blocks in CreateProcess and freezes the server. A message every 500 ms keeps that read
+  // from staying pending. Same request id every time, so the server's set of cancelled ids never grows.
+  if (api.platform === 'win32') keepAlive = setInterval(() => { if (mine === generation) notify('$/cancelRequest', { id: -1 }); }, 500);
   ready = true;
   hooks.status('ready');
   opened.forEach(sendOpen);
@@ -334,6 +339,7 @@ export async function callers(model: M.editor.ITextModel, position: M.IPosition)
 }
 
 export function stop() {
+  clearInterval(keepAlive);
   ready = false;
   rejectPending('Ruby LSP parado');
   progress.clear();
@@ -397,6 +403,7 @@ api.onLspMessage(onMessage);
 api.onLspLog(text => hooks?.log(text));
 api.onLspExit(code => {
   const message = `O Ruby LSP encerrou (código ${code}). Instale com: gem install ruby-lsp`;
+  clearInterval(keepAlive);
   ready = false;
   rejectPending(message); // a pending initialize reports this same message from start()
   progress.clear();

@@ -23,10 +23,12 @@ const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()
 
 let rubyBin = ''; // bin dir of the interpreter chosen in Rubaxe, put first on PATH for every child process
 
-// extra.RUBYOPT is appended to the user's own RUBYOPT instead of replacing it.
+// extra.RUBYOPT / RUBYLIB are appended to the user's own values instead of replacing them.
+// Helper paths go in RUBYLIB (a real path list, spaces allowed); RUBYOPT cannot quote, so it only gets -r<name>.
 function childEnv(extra: Record<string, string> = {}): Record<string, string> {
   const env = { ...process.env, ...extra } as Record<string, string>;
   if (extra.RUBYOPT) env.RUBYOPT = [process.env.RUBYOPT, extra.RUBYOPT].filter(Boolean).join(' ');
+  if (extra.RUBYLIB) env.RUBYLIB = [extra.RUBYLIB, process.env.RUBYLIB].filter(Boolean).join(path.delimiter);
   // Windows spells it "Path"; adding a second "PATH" key would leave which one wins to chance.
   const key = Object.keys(env).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
   if (rubyBin) env[key] = rubyBin + path.delimiter + (env[key] ?? '');
@@ -220,7 +222,6 @@ ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string,
 });
 // Fresh directory per run for test reports, coverage and profiles.
 ipcMain.handle('mkTemp', () => fs.mkdtemp(path.join(os.tmpdir(), 'rubaxe-')));
-// shortcut: RUBYOPT cannot quote, so -I<this dir> breaks if Rubaxe lives under a path with spaces; copy helpers to a spaceless dir then.
 // Packaged builds unpack src/ruby next to app.asar (see build.asarUnpack): ruby itself cannot read inside the archive.
 ipcMain.handle('rubyHelpers', () => path.join(__dirname, '..', 'src', 'ruby').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`));
 ipcMain.handle('findRubies', () => findRubies());
