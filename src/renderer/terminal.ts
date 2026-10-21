@@ -5,11 +5,17 @@ import { $, api, h, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
+import { ipcMessage } from './paths.ts';
 
 interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string }
 
 // irb(main):001>, pry(main)>, myapp(dev)> — the console is ready for input once its prompt shows.
 const PROMPT = /\w+\([\w:-]+\)(:\d+)?[>*]\s*$/;
+
+function allowed(feature: string) {
+  if (!Features.on(feature)) notify('Esta funcionalidade está desativada em Configurações.');
+  return Features.on(feature);
+}
 
 const terms: Term[] = [];
 let active: Term | undefined;
@@ -23,7 +29,9 @@ function select(t: Term | undefined) {
   if (t) requestAnimationFrame(() => { t.fit.fit(); t.xterm.focus(); });
 }
 
-export async function create(title = 'terminal', command?: string, isConsole = false): Promise<Term> {
+// Undefined when the terminal (or console) feature is switched off.
+export async function create(title = 'terminal', command?: string, isConsole = false): Promise<Term | undefined> {
+  if (!allowed(isConsole ? 'console' : 'terminal')) return;
   Panel.show('terminal');
   const el = h('div', { className: 'term' });
   $('#terminal-host').append(el);
@@ -50,7 +58,7 @@ export async function create(title = 'terminal', command?: string, isConsole = f
     await api.ptySpawn(t.id, ws.root, xterm.cols, xterm.rows, Features.get<string>('terminal.shell'));
   } catch (e) {
     t.alive = false;
-    xterm.write(`\r\nNão foi possível abrir o terminal: ${(e as Error).message}\r\n`);
+    xterm.write(`\r\nNão foi possível abrir o terminal: ${ipcMessage(e)}\r\n`);
     return t;
   }
   if (command) api.ptyWrite(t.id, command + '\r');
@@ -58,6 +66,7 @@ export async function create(title = 'terminal', command?: string, isConsole = f
 }
 
 export function show() {
+  if (!allowed('terminal')) return;
   if (!terms.length) return void create();
   Panel.show('terminal');
   select(active ?? terms[terms.length - 1]);
@@ -73,7 +82,8 @@ export function kill(t = active) {
 }
 
 // Sends the selection (or the current line) to the newest console terminal, opening IRB if none is running.
-export async function sendSelection(openConsole: () => Promise<Term>) {
+export async function sendSelection(openConsole: () => Promise<Term | undefined>) {
+  if (!allowed('console')) return;
   const sel = Editor.editor.getSelection();
   const model = Editor.editor.getModel();
   if (!sel || !model) return notify('Abra um arquivo Ruby e selecione o código.');
@@ -81,6 +91,7 @@ export async function sendSelection(openConsole: () => Promise<Term>) {
   let target = [...terms].reverse().find(t => t.console && t.alive);
   if (!target) {
     target = await openConsole();
+    if (!target) return;
     // Input typed while the console is still booting is dropped, so wait for its prompt (15 s at most).
     for (let waited = 0; waited < 15000 && target.alive && !PROMPT.test(target.tail); waited += 100) await new Promise(r => setTimeout(r, 100));
   }

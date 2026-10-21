@@ -2,6 +2,7 @@
 import type * as M from 'monaco-editor';
 import { $, abs, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
+import * as Features from './features.ts';
 import * as Panel from './panel.ts';
 import { isTest, parseTestReport, relativeTo, testLines, type TestResult } from './paths.ts';
 import { quickPick } from './quick-input.ts';
@@ -57,6 +58,7 @@ async function finish(report: string, dir: string, cov: boolean, full: boolean, 
 }
 
 export function runWithCoverage(start: () => unknown) {
+  if (!Features.on('coverage')) return notify('Esta funcionalidade está desativada em Configurações.');
   withCoverage = true;
   void start();
 }
@@ -115,7 +117,7 @@ function paintCoverage(model: M.editor.ITextModel) {
 
 function paintGlyphs(model: M.editor.ITextModel) {
   const rel = relOf(model);
-  const lines = rel && isTest(rel) ? testLines(model.getValue()) : [];
+  const lines = rel && isTest(rel) && Features.on('testTree') ? testLines(model.getValue()) : [];
   glyphIds.set(model, model.deltaDecorations(glyphIds.get(model) ?? [], lines.map(line => {
     const status = results.find(r => r.file === rel && r.line === line)?.status;
     return {
@@ -135,7 +137,14 @@ function repaintAll() {
 
 // ---------- tree view ----------
 
+// Called when the testTree switch changes.
+export function refreshTree() {
+  renderTree();
+  repaintAll();
+}
+
 function renderTree() {
+  if (!Features.on('testTree')) return $('#tests-tree').replaceChildren(h('div', { className: 'empty' }, 'Árvore de testes desativada em Configurações.'));
   const counts = { passed: 0, failed: 0, pending: 0 };
   results.forEach(r => counts[r.status]++);
   const rows: HTMLElement[] = [h('div', { className: 'empty' }, results.length

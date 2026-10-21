@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -57,4 +57,9 @@ test('test reports from RSpec json and the Minitest reporter normalize to relati
   assert.match(r[1].message!, /expected 4/);
   const mt = JSON.stringify([{ file: 'C:/proj/test/a_test.rb', line: 4, name: 'test_ok', group: 'ATest', status: 'passed', message: null }]);
   assert.deepStrictEqual(parseTestReport(mt, 'C:\\proj')[0], { file: 'test/a_test.rb', line: 4, name: 'ATest#test_ok', status: 'passed', message: undefined, time: undefined });
+});
+
+test('ipcMessage strips the Electron IPC prefix', () => {
+  assert.strictEqual(ipcMessage(new Error("Error invoking remote method 'createPath': Error: EEXIST: já existe")), 'EEXIST: já existe');
+  assert.strictEqual(ipcMessage(new Error('falhou')), 'falhou');
 });

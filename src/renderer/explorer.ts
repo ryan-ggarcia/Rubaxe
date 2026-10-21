@@ -4,12 +4,20 @@ import { $, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
+import { ipcMessage } from './paths.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
 const SYMBOL_ICONS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable', 'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enum-member', 'struct', 'event', 'operator', 'type-parameter'];
 const expanded = new Set<string>();
 let selected = '';
 let selectedIsDir = false;
+
+// A new folder starts with no selection, so "New file" cannot land in the old one.
+export function resetExplorer() {
+  expanded.clear();
+  selected = '';
+  selectedIsDir = false;
+}
 
 export function initExplorer(openFolder: () => void) {
   const action = (name: string, title: string, run: () => void) => { const el = icon(name, title); el.onclick = run; return el; };
@@ -106,7 +114,7 @@ async function renameEntry(from: string) {
   try {
     await api.renamePath(from, to);
   } catch (e) {
-    return notify(`Não foi possível renomear ${basename(from)}: ${(e as Error).message}`, 'error');
+    return notify(`Não foi possível renomear ${basename(from)}: ${ipcMessage(e)}`, 'error');
   }
   for (const p of [...expanded]) if (isUnder(p, from)) { expanded.delete(p); expanded.add(to + p.slice(from.length)); }
   selected = to;
@@ -137,7 +145,7 @@ async function deleteEntry(p: string) {
   try {
     await api.trashPath(p);
   } catch (e) {
-    return notify(`Não foi possível excluir ${basename(p)}: ${(e as Error).message}`, 'error');
+    return notify(`Não foi possível excluir ${basename(p)}: ${ipcMessage(e)}`, 'error');
   }
   selected = '';
   await refreshFiles();
@@ -153,7 +161,7 @@ async function newEntry(isDir: boolean) {
   try {
     await api.createPath(path, isDir);
   } catch (e) {
-    return notify(`Não foi possível criar ${name}: ${(e as Error).message}`, 'error');
+    return notify(`Não foi possível criar ${name}: ${ipcMessage(e)}`, 'error');
   }
   expanded.add(base);
   if (isDir) expanded.add(path); else ws.files.push(path);

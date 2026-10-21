@@ -71,5 +71,5 @@ export function quickPick(opts: Options) {
 }
 
 export function prompt(placeholder: string, value = ''): Promise<string | undefined> {
-  return new Promise(resolve => quickPick({ placeholder, value, items: () => [], onAccept: v => resolve(v.trim() || undefined), onDismiss: () => resolve(undefined) }));
+  return new Promise(resolve => quickPick({ placeholder, value, items: () => [], onAccept: v => resolve(v.trim()), onDismiss: () => resolve(undefined) }));
 }

@@ -3,7 +3,7 @@ import type * as M from 'monaco-editor';
 import { $, abs, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
 import * as Debug from './debug.ts';
 import * as Editor from './editor.ts';
-import { initExplorer, renderExplorer, renderOutline } from './explorer.ts';
+import { initExplorer, renderExplorer, renderOutline, resetExplorer } from './explorer.ts';
 import * as Features from './features.ts';
 import * as Git from './git.ts';
 import * as Hierarchy from './hierarchy.ts';
@@ -51,7 +51,7 @@ const commands: Command[] = [
   { id: 'profileFile', label: 'Ruby: Perfilar Arquivo (amostragem)', icon: 'flame', run: () => Ruby.runFile(Tests.profile, 'profiler') },
   { id: 'profileExact', label: 'Ruby: Perfilar Arquivo (instrumentado, exato)', icon: 'flame', run: () => Ruby.runFile((cmd, args) => Tests.profile(cmd, args, true), 'profiler') },
   { id: 'gotoTest', label: 'Ruby: Ir para Teste / Implementação', key: 'Ctrl+Shift+T', icon: 'go-to-file', run: () => Ruby.gotoTest() },
-  { id: 'stop', label: 'Ruby: Parar Execução', key: 'Ctrl+F2', icon: 'debug-stop', run: () => Ruby.stopAll() },
+  { id: 'stop', label: 'Ruby: Parar Execução', key: 'Shift+F2', icon: 'debug-stop', run: () => Ruby.stopAll() },
   { id: 'rake', label: 'Rake: Executar Tarefa...', icon: 'tools', run: () => Ruby.rakeTasks() },
   ...['install', 'update', 'outdated', 'lock', 'clean'].map(sub => ({ id: `bundle.${sub}`, label: `Bundler: ${sub}`, icon: 'package', run: () => Ruby.bundle(sub) })),
   { id: 'debugStart', label: 'Depurar: Iniciar / Continuar', key: 'F5', icon: 'debug-alt', run: () => Debug.active() ? Debug.cont() : debugFile() },
@@ -66,7 +66,7 @@ const commands: Command[] = [
   { id: 'debugAttach', label: 'Depurar: Anexar a Processo (rdbg)...', icon: 'debug-disconnect', run: () => Debug.attach() },
   { id: 'debugView', label: 'Exibir: Executar e Depurar', key: 'Ctrl+Shift+D', icon: 'debug-alt', run: () => showView('debug') },
   { id: 'debugConsole', label: 'Exibir: Console de Depuração', key: 'Ctrl+Shift+Y', icon: 'debug-console', run: () => Panel.show('debug') },
-  { id: 'railsRelated', label: 'Rails: Ir para Arquivo Relacionado...', key: 'Ctrl+Shift+R', icon: 'references', run: () => Rails.related() },
+  { id: 'railsRelated', label: 'Rails: Ir para Arquivo Relacionado...', key: 'Shift+Alt+R', icon: 'references', run: () => Rails.related() },
   { id: 'railsGenerate', label: 'Rails: Executar Generator...', icon: 'wand', run: () => Rails.generate() },
   { id: 'railsDestroy', label: 'Rails: Desfazer Generator (destroy)...', icon: 'trash', run: () => Rails.generate(true) },
   { id: 'railsServer', label: 'Rails: Iniciar Servidor', icon: 'server-process', run: () => Rails.server() },
@@ -75,9 +75,10 @@ const commands: Command[] = [
   { id: 'terminal', label: 'Exibir: Terminal', key: 'Ctrl+`', icon: 'terminal', run: () => Terminal.show() },
   { id: 'terminalAbnt', label: 'Exibir: Terminal', key: "Ctrl+'", run: () => Terminal.show() },
   { id: 'terminalNew', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+`', icon: 'add', run: () => Terminal.create() },
+  { id: 'terminalNewAbnt', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+"', run: () => Terminal.create() },
   { id: 'irb', label: 'Ruby: Console IRB', icon: 'terminal', run: () => openIrb() },
   { id: 'setupRuby', label: 'Ruby: Configurar Ambiente (Ruby, ruby-lsp, ridk)', icon: 'tools', run: () => setupRuby() },
-  { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Ctrl+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
+  { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Shift+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
   { id: 'scmView', label: 'Exibir: Controle de Código', key: 'Ctrl+Shift+G', icon: 'source-control', run: () => showView('scm') },
   { id: 'gitCommit', label: 'Git: Commit', icon: 'check', run: () => Git.commit() },
   { id: 'gitBranch', label: 'Git: Trocar Branch...', icon: 'git-branch', run: () => Git.switchBranch() },
@@ -104,7 +105,8 @@ const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'rerunFa
 
 // "Ctrl+Shift+P" style keys -> handler; compared with the normalized key of each keydown.
 const keymap = new Map(commands.filter(c => c.key).map(c => [c.key!.toLowerCase(), c]));
-const eventKey = (e: KeyboardEvent) => [e.ctrlKey && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', e.key.toLowerCase()].filter(Boolean).join('+');
+// Cmd counts as Ctrl on macOS; Backquote by physical key because Shift turns e.key into "~".
+const eventKey = (e: KeyboardEvent) => [(e.ctrlKey || (api.platform === 'darwin' && e.metaKey)) && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', e.code === 'Backquote' ? '`' : e.key.toLowerCase()].filter(Boolean).join('+');
 
 // ---------- layout ----------
 
@@ -210,7 +212,7 @@ function startLsp() {
     ensureModel: Editor.ensureModel,
     log: text => { lspLog.push(text); if (lspLog.length > 2000) lspLog.splice(0, 500); },
     status: (state, detail) => {
-      const look = { starting: ['loading', 'Ruby LSP: iniciando'], ready: ['check', 'Ruby LSP'], busy: ['sync', `Ruby LSP: ${detail ?? 'trabalhando'}`], error: ['error', 'Ruby LSP'], off: ['circle-slash', 'Ruby LSP'] }[state];
+      const look = { starting: ['loading', 'Ruby LSP: iniciando'], ready: ['check', 'Ruby LSP'], busy: ['sync', `Ruby LSP: ${(detail ?? 'trabalhando').replace(/^Ruby LSP:? */, '')}`], error: ['error', 'Ruby LSP'], off: ['circle-slash', 'Ruby LSP'] }[state];
       setStatus(el, look[0], look[1], detail ?? '');
       el.classList.toggle('error', state === 'error');
       if (state === 'ready') void renderOutline();
@@ -226,6 +228,7 @@ async function openFolder(path?: string) {
   ws.hasGemfile = await api.exists(abs('Gemfile'));
   ws.isRails = await api.exists(abs('config/application.rb')) && await api.exists(abs('bin/rails'));
   Rails.resetRails();
+  resetExplorer();
   document.title = `${basename(target)} — Rubaxe`;
   $('#command-center-label').textContent = basename(target);
   Features.set('window.lastFolder', target);
@@ -300,6 +303,8 @@ function onSettingChange(key: string) {
   if (key === 'ruby.lspPath' && ws.root) startLsp();
   if (key === 'ruby.path' || key === 'features.sdk') void refreshInterpreter();
   if (key === 'ruby.path') void Ruby.applyRubyBin().then(() => { if (ws.root) startLsp(); });
+  if (key === 'features.git') void Git.refresh();
+  if (key === 'features.testTree') Tests.refreshTree();
   if (key === 'features.gemsView') void Ruby.loadGems($('#gems-body'));
 }
 

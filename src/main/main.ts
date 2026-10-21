@@ -189,6 +189,8 @@ ipcMain.handle('readDir', async (_e, dir: string) => (await fs.readdir(dir, { wi
 ipcMain.handle('readFile', (_e, p: string) => fs.readFile(p, 'utf8'));
 ipcMain.handle('writeFile', (_e, p: string, text: string) => fs.writeFile(p, text, 'utf8'));
 ipcMain.handle('createPath', async (_e, p: string, isDir: boolean) => {
+  // mkdir with recursive (needed for nested paths) silently succeeds on an existing folder.
+  if (await fs.access(p).then(() => true, () => false)) throw new Error(`${path.basename(p)} já existe`);
   if (isDir) return void await fs.mkdir(p, { recursive: true });
   await fs.mkdir(path.dirname(p), { recursive: true });
   await fs.writeFile(p, '', { flag: 'wx' });
@@ -253,8 +255,12 @@ app.whenReady().then(() => {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', e => e.preventDefault());
-  win.webContents.on('before-input-event', (_e, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') win!.webContents.toggleDevTools();
+  win.webContents.on('before-input-event', (e, input) => {
+    // F12 belongs to Monaco (go to definition); DevTools uses Chromium's Ctrl+Shift+I.
+    if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') {
+      e.preventDefault();
+      win!.webContents.toggleDevTools();
+    }
   });
   // Let the renderer confirm unsaved changes before the window actually closes.
   win.on('close', e => {

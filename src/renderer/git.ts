@@ -4,6 +4,7 @@ import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import { refreshWorkspace } from './explorer.ts';
 import { parseBlame, parseGitStatus, relativeTo, type BlameLine, type GitChange } from './paths.ts';
+import * as Features from './features.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
 let top = ''; // repository root ('' = not a repo)
@@ -16,6 +17,12 @@ const STATUS: Record<string, [label: string, color: string]> = {
   C: ['Copiado', '#73C991'], U: ['Não rastreado', '#73C991'], T: ['Tipo alterado', '#E2C08D'],
 };
 
+// Commands call this first; the Source Control view and refresh handle the disabled state themselves.
+function enabled() {
+  if (!Features.on('git')) notify('Esta funcionalidade está desativada em Configurações.');
+  return Features.on('git');
+}
+
 const git = (...args: string[]) => api.exec('git', args, top || ws.root);
 const absOf = (p: string) => top + ws.sep + p.split('/').join(ws.sep);
 
@@ -27,6 +34,11 @@ async function gitOk(...args: string[]) {
 
 export async function refresh() {
   if (!ws.root) return;
+  if (!Features.on('git')) {
+    top = branch = '';
+    renderStatus();
+    return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Git desativado em Configurações.'));
+  }
   const root = await api.exec('git', ['rev-parse', '--show-toplevel'], ws.root);
   top = root.code === 0 ? root.out.trim().replace(/\//g, ws.sep) : '';
   if (!top) {
@@ -36,7 +48,7 @@ export async function refresh() {
     init.onclick = async () => { if (await gitOk('init')) void refresh(); };
     return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Esta pasta não é um repositório Git.'), h('div', { className: 'empty' }, init));
   }
-  const r = await git('status', '--porcelain=v1', '-b', '-z');
+  const r = await git('status', '--porcelain=v1', '-b', '-z', '-uall'); // -uall: an untracked folder lists its files, not one nameless row
   const s = parseGitStatus(r.out);
   branch = s.branch;
   renderStatus();
@@ -80,6 +92,7 @@ async function diff(c: GitChange, staged: boolean) {
 }
 
 export async function commit() {
+  if (!enabled()) return;
   if (!top) return notify('Esta pasta não é um repositório Git.');
   const box = $('#scm-message') as HTMLTextAreaElement;
   const message = box.value.trim();
@@ -94,6 +107,7 @@ export async function commit() {
 }
 
 export async function switchBranch() {
+  if (!enabled()) return;
   if (!top) return notify('Esta pasta não é um repositório Git.');
   const list = (await git('branch', '--format=%(refname:short)')).out.split(/\r?\n/).filter(Boolean);
   const go = async (args: string[]) => {
@@ -135,6 +149,7 @@ function paintBlame() {
 }
 
 export async function toggleBlame() {
+  if (!enabled()) return;
   const model = Editor.editor.getModel();
   const path = Editor.active?.path;
   if (!model || !path || Editor.active?.kind !== 'file') return notify('Abra um arquivo para ver o blame.');

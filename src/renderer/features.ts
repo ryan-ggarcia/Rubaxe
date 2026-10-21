@@ -48,7 +48,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['sdk', 'Detectar versão do Ruby e .ruby-version', 'ok'],
     ['versionManagers', 'Escolher interpretador (rbenv / rvm / asdf / chruby / mise / RubyInstaller)', 'ok'],
     ['gemsView', 'Lista de gems com navegação para o código', 'ok'],
-    ['rbs', 'RBS (realce) e Steep check', 'ok'],
+    ['rbs', 'Steep check (tipos RBS)', 'ok'],
   ]],
   ['Rails', [
     ['railsNav', 'Navegar Model ↔ Controller ↔ View ↔ Helper', 'ok'],
@@ -110,7 +110,8 @@ function controlFor(key: string, type: Setting[3], changed: (key: string, value:
   input.onchange = () => {
     const v = type === 'number' ? Number(input.value) : input.value.trim();
     // Empty or zero would make the editor unusable (font size 0); keep the last good value.
-    if (type === 'number' ? !(Number(v) > 0) : !v) { input.value = String(settings[key]); return; }
+    // (empty text is fine when the default is empty: it means "use the default")
+    if (type === 'number' ? !(Number(v) > 0) : !v && SETTINGS.find(s => s[1] === key)![4] !== '') { input.value = String(settings[key]); return; }
     changed(key, v);
   };
   return input;
@@ -149,6 +150,13 @@ export function render(container: HTMLElement, onChange: (key: string) => void) 
   filter.oninput = () => {
     const q = filter.value.toLowerCase();
     body.querySelectorAll<HTMLElement>('.setting').forEach(el => { el.hidden = !el.dataset.text!.includes(q); });
+    // A heading stays only while something under it (up to the next heading of its level or higher) matches.
+    const kids = [...body.children] as HTMLElement[];
+    kids.forEach((el, i) => {
+      if (!/^H[23]$/.test(el.tagName)) return;
+      const end = kids.findIndex((k, j) => j > i && /^H[23]$/.test(k.tagName) && k.tagName <= el.tagName);
+      el.hidden = !kids.slice(i + 1, end < 0 ? undefined : end).some(k => k.classList.contains('setting') && !k.hidden);
+    });
   };
   container.replaceChildren(h('div', { className: 'settings-page' }, filter, body));
   filter.focus();

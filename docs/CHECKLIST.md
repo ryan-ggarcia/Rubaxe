@@ -23,8 +23,8 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 | Lint / formatação | **RuboCop** ou **Standard** (via Ruby LSP) | gem do projeto | Cobre a maior parte das 115 inspeções do RubyMine. |
 | Depurador | gem **debug** (`rdbg`) via **DAP** | gem `debug` | Depurador oficial do Ruby; fala o protocolo DAP. |
 | Testes / tarefas | CLIs `rspec`, `ruby -Itest`, `bin/rails test`, `bundle`, `rake` | — | Mesmo comportamento do terminal. |
-| Terminal (futuro) | xterm.js + node-pty | — | Padrão do VS Code. |
-| Empacotamento (futuro) | electron-builder | — | Instalador Windows/macOS/Linux. |
+| Terminal | xterm.js + node-pty | 6.0 / 1.1 | Padrão do VS Code; node-pty com binário pronto no Windows/macOS. |
+| Empacotamento | electron-builder | 26.17 | Instalador Windows; Linux/macOS pelo GitHub Actions. |
 | Testes do Rubaxe | `node:test` (embutido no Node) | — | Zero dependências. |
 
 **Descartados:** Tauri (mais leve, mas exige Rust, que não está instalado); parser/indexador próprio (o RubyMine tem ~1.000 classes só de linguagem — anos de trabalho que o Ruby LSP já resolve).
@@ -55,7 +55,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Side Bar redimensionável e recolhível (Ctrl+B)
 - [x] Abas de editor: ativa/inativa, indicador de "não salvo", fechar (Ctrl+W)
 - [x] Panel inferior redimensionável (Ctrl+J): Problemas, Saída
-- [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, encoding, linguagem
+- [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
 - [x] Tema Dark Modern (cores oficiais) também no Monaco
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
 
@@ -130,7 +130,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 9 — Rails
 > **Testado no app real** com um app Rails 8.1 gerado (`rails new --minimal` + scaffold), 14 checagens. Rails 8.1 em Ruby 4.0/Windows: o `rails console` precisa de `gem "fiddle"` no Gemfile do app (exigência do reline, não do Rubaxe).
 
-- [x] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema (Ctrl+Shift+R; da view vai para a action, do model para o `create_table`)
+- [x] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema (Shift+Alt+R; da view vai para a action, do model para o `create_table`)
 - [x] Executar generators (model, controller, scaffold, migration…) e desfazer (`rails destroy`); db:migrate/rollback/seed
 - [x] Rails server (painel Saída) e Rails console (terminal integrado)
 - [x] Completar rotas (`_path`/`_url` de `bin/rails routes`) e chaves i18n (`t('…')` de `config/locales`); views `.erb` com realce HTML
@@ -147,7 +147,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Gerenciadores de versão: seletor de interpretador (rbenv, rvm, asdf, chruby, mise, RubyInstaller, PATH); o escolhido vai na frente do PATH de tudo que o Rubaxe executa
 - [x] Lista de gems (view Ruby) com navegação para o código-fonte
 - [x] RBS e Steep — `.rbs` com realce Ruby e comando `steep check` (testado com Steep 2.1: aponta o erro de tipo contra a assinatura RBS)
-- [x] Console IRB; enviar seleção ao console (Ctrl+Alt+Enter). Pry: rode `pry` no terminal
+- [x] Console IRB; enviar seleção ao console (Shift+Alt+Enter). Pry: rode `pry` no terminal
 - [x] Code style configurável: opções da SPEC viram `.rubocop_rubaxe.yml` (herdado pelo `.rubocop.yml`), aplicado pelo formatador via RuboCop
 
 ### Fase 11 — Ferramentas
@@ -159,9 +159,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
 
 ### Fase 12 — Qualidade e entrega
-- [x] Testes unitários (`npm test`, 31 testes): convenções de teste, fuzzy, LSP framing, rake, relatórios de teste, Rails, Git, intentions, estilo de código
+- [x] Testes unitários (`npm test`, 32 testes): convenções de teste, fuzzy, LSP framing, rake, shell (aspas no Windows), relatórios de teste, Rails, Git, intentions, estilo de código
 - [x] Meta de desempenho — medido: abre em ~0,7 s (0,93 s reabrindo um projeto); digitando num arquivo de 10.007 linhas, mediana 27 ms e pior caso 43 ms por tecla, contando 2 frames de tela
-- [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe Setup <versão>.exe`; instalação silenciosa, atalhos, app instalado (pasta com espaços e acentos) e desinstalação testados. Sem assinatura de código (não há certificado nesta máquina): o Windows SmartScreen avisa na primeira execução. Linux: o pacote é gerado, mas o node-pty não tem binário pronto para Linux — gere com `npm run dist:linux` numa máquina Linux (compila o terminal). macOS: só em um Mac (exigência da Apple)
+- [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe-Setup-<versão>.exe`; instalação silenciosa, atalhos, app instalado (pasta com espaços e acentos) e desinstalação testados. Sem assinatura de código (não há certificado nesta máquina): o Windows SmartScreen avisa na primeira execução. Linux: o pacote é gerado, mas o node-pty não tem binário pronto para Linux — gere com `npm run dist:linux` numa máquina Linux (compila o terminal). macOS: só em um Mac (exigência da Apple)
 - [x] Atualizar o README com apresentação, instalação pelo instalador e pelo código-fonte
 - [x] GitHub Actions (`.github/workflows/build.yml`): gera Linux (AppImage), macOS (dmg x64 e arm64, assinatura ad-hoc) e Windows; uma tag `v*` publica tudo num Release
 
@@ -171,3 +171,15 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - Descompilar ou copiar código, textos ou ícones do RubyMine/VS Code.
 - Suporte a JRuby, Puppet, Capistrano, Vagrant e Code With Me (nicho; reavaliar depois).
 - Marketplace de extensões (reavaliar após o MVP).
+
+## 6. Adiados (descritos na SPEC, sem pedido concreto ainda)
+- Inspeções próprias além do RuboCop (nil, tipos, YARD) e rename que entende Rails.
+- Cliente HTTP e ferramentas de banco de dados.
+- Tipos de execução Cucumber, aplicação Rack e "comando qualquer"; relatório de Test::Unit.
+- RSpec: pasta com filtro de nome, exemplo por ID (`arquivo[1:2]`), backtrace completo.
+- Inlay hints a partir de assinaturas RBS (tipos de atributo, parâmetro, retorno).
+- Depurador: seguir subprocessos automaticamente.
+- Bundler: `pack`, `init`, criar gem e aviso de gem não instalada.
+- Intentions: parâmetros numerados ↔ nomeados, mover string para i18n, embutir variável local, juntar ifs em sequência.
+- Estilo de código: `{}` → `do…end` ao apertar Enter, espaços por tipo de operador, indentar o próprio `private`/`protected`, declarações vazias além de métodos; opções de RuboCop (config do projeto × padrão, modo servidor, Standard).
+- Tema claro.

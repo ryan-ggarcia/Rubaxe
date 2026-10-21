@@ -3,7 +3,7 @@ import type * as M from 'monaco-editor';
 import { $, api, basename, fileIcon, h, notify } from './dom.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
-import { languageFor } from './paths.ts';
+import { ipcMessage, languageFor } from './paths.ts';
 
 export interface Tab {
   key: string;
@@ -59,6 +59,7 @@ export function createEditor(settingsRenderer: (container: HTMLElement) => void)
 
 export function applyOptions() {
   editor.updateOptions(editorOptions());
+  diffEditor.updateOptions(editorOptions());
   for (const t of tabs) t.model?.updateOptions({ tabSize: Features.get<number>('editor.tabSize'), insertSpaces: true });
 }
 
@@ -69,7 +70,7 @@ export async function ensureModel(uri: M.Uri): Promise<M.editor.ITextModel | nul
   try {
     text = await api.readFile(uri.fsPath);
   } catch (e) {
-    notify(`Não foi possível abrir ${uri.fsPath}: ${(e as Error).message}`, 'error');
+    notify(`Não foi possível abrir ${uri.fsPath}: ${ipcMessage(e)}`, 'error');
     return null;
   }
   // Saving a binary file decoded as UTF-8 would corrupt it, so it is never opened.
@@ -207,7 +208,7 @@ export async function save(tab = active): Promise<boolean> {
   try {
     await api.writeFile(tab.path, text);
   } catch (e) {
-    notify(`Erro ao salvar ${tab.title}: ${(e as Error).message}`, 'error');
+    notify(`Erro ao salvar ${tab.title}: ${ipcMessage(e)}`, 'error');
     return false;
   }
   tab.saved = model.getAlternativeVersionId();

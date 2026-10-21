@@ -2,6 +2,7 @@
 import { rubocopStyle, withInherit } from './code-style.ts';
 import { abs, api, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
+import { refreshWorkspace } from './explorer.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
 import { fuzzyScore, implCandidates, isTest, minitestNameAt, parseRakeTasks, relativeTo, testCandidates, type TestResult } from './paths.ts';
@@ -65,7 +66,7 @@ const framework = (rel: string) => {
 export async function runFile(run: (cmd: string, args: string[]) => unknown = runCommand, feature = 'runFile') {
   if (!enabled(feature)) return;
   const rel = await activeFile();
-  if (rel) run(ruby(), [rel]);
+  if (rel) run(...withBundle(ruby(), [rel]));
 }
 
 // atLine: true = cursor line, a number = that line (gutter ▶), false = whole file.
@@ -122,7 +123,7 @@ export async function gotoTest() {
       label: c, icon: 'new-file',
       run: async () => {
         await api.createPath(abs(c), false);
-        ws.files.push(abs(c));
+        await refreshWorkspace();
         await Editor.openFile(abs(c));
       },
     })),

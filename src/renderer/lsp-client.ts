@@ -52,8 +52,11 @@ export const filesChanged = (changes: (readonly [path: string, type: 1 | 3])[]) 
   if (ready && changes.length) notify('workspace/didChangeWatchedFiles', { changes: changes.map(([p, type]) => ({ uri: monaco.Uri.file(p).toString(), type })) });
 };
 // Providers must never throw into Monaco; a failed request just means no result.
-const ask = <T = any>(feature: string, method: string, params: unknown): Promise<T | null> =>
-  Features.on(feature) && ready ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
+// Non-file documents (e.g. rubaxe-diff:) make ruby-lsp crash trying to read them, so they never reach the server.
+const ask = <T = any>(feature: string, method: string, params: unknown): Promise<T | null> => {
+  const uri = (params as { textDocument?: { uri?: string } })?.textDocument?.uri;
+  return Features.on(feature) && ready && (uri === undefined || uri.startsWith('file:')) ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
+};
 
 function rejectPending(reason: string) {
   pending.forEach(p => p.reject(new Error(reason)));
@@ -368,7 +371,7 @@ function sendOpen(model: M.editor.ITextModel) {
 
 export function didOpen(model: M.editor.ITextModel) {
   const uri = model.uri.toString();
-  if (model.getLanguageId() !== 'ruby' || opened.has(uri)) return;
+  if (model.getLanguageId() !== 'ruby' || model.uri.scheme !== 'file' || opened.has(uri)) return;
   opened.set(uri, model);
   // Monaco orders changes end-to-start, so they apply in sequence as LSP expects.
   listeners.set(uri, model.onDidChangeContent(e => {

@@ -201,3 +201,6 @@ export function parseBlame(out: string): BlameLine[] {
 export function parseRakeTasks(out: string): { name: string; desc: string }[] {
   return [...out.matchAll(/^rake (\S+)(?:\s+# (.*))?$/gm)].map(m => ({ name: m[1], desc: m[2] ?? '' }));
 }
+
+// Electron prefixes IPC rejections with "Error invoking remote method 'x': Error: "; users only need the reason.
+export const ipcMessage = (e: unknown) => (e as Error).message.replace(/^Error invoking remote method '\w+': (\w*Error: )?/, '');

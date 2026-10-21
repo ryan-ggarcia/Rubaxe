@@ -1,7 +1,7 @@
 // Project-wide text search view (Ctrl+Shift+F).
 import { $, api, fileIcon, h, ws } from './dom.ts';
 import * as Editor from './editor.ts';
-import { relativeTo } from './paths.ts';
+import { ipcMessage, relativeTo } from './paths.ts';
 
 const opts = { regex: false, caseSensitive: false };
 
@@ -33,7 +33,7 @@ async function run() {
   try {
     hits = await api.search(ws.root, query, opts);
   } catch (e) {
-    return results.replaceChildren(h('div', { className: 'empty error' }, (e as Error).message.replace(/^Error invoking remote method '\w+': (\w*Error: )?/, '')));
+    return results.replaceChildren(h('div', { className: 'empty error' }, ipcMessage(e)));
   }
   const byFile = Map.groupBy(hits, hit => hit.file);
   const rows: HTMLElement[] = [h('div', { className: 'empty' }, `${hits.length}${hits.length >= 2000 ? '+' : ''} resultado(s) em ${byFile.size} arquivo(s)`)];

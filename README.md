@@ -48,7 +48,7 @@ Em ambos, instale o Ruby (de preferência por um gerenciador de versões) e rode
 
 ## Instalação pelo código-fonte
 
-Requisitos: Node.js 22+, Git e o Ruby configurado como acima.
+Requisitos: Node.js 24 (mínimo 22.18, que roda os testes em TypeScript direto), Git e o Ruby configurado como acima.
 
 ```sh
 git clone https://github.com/ryan-ggarcia/Rubaxe.git
@@ -80,7 +80,7 @@ Se o Rubaxe abrir como Node puro (erro `Cannot read properties of undefined (rea
 | Executar testes do arquivo | `Ctrl+Shift+F10` |
 | Depurar / continuar | `F5` |
 | Ações rápidas | `Ctrl+.` |
-| Arquivo Rails relacionado | `Ctrl+Shift+R` |
+| Arquivo Rails relacionado | `Shift+Alt+R` |
 | Terminal | ``Ctrl+` `` |
 
 ## Documentos

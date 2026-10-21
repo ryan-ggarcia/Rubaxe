@@ -4,7 +4,7 @@ IDE para Ruby com o **suporte à linguagem do RubyMine** e o **layout/estilo do 
 
 ## Decisões
 
-- **Stack:** Electron + Monaco (editor do VS Code) + Codicons para a interface; TypeScript com esbuild; HTML/CSS/TS puros, sem framework. Inteligência Ruby via **Ruby LSP** (Prism, RuboCop); depurador futuro via `rdbg`/DAP. Descartados: Tauri (exige Rust), C++/Qt (editor teria de ser reescrito), reimplementar o motor do RubyMine (anos de trabalho que o Ruby LSP já cobre).
+- **Stack:** Electron + Monaco (editor do VS Code) + Codicons para a interface; TypeScript com esbuild; HTML/CSS/TS puros, sem framework. Inteligência Ruby via **Ruby LSP** (Prism, RuboCop); depurador via `rdbg`/DAP. Descartados: Tauri (exige Rust), C++/Qt (editor teria de ser reescrito), reimplementar o motor do RubyMine (anos de trabalho que o Ruby LSP já cobre).
 - **Pesquisa sem cópia:** o REA inventariou os JARs do RubyMine e scripts leram apenas descritores (`plugin.xml`, `.properties`) e nomes de classe — nunca bytecode. Tudo virou [SPEC.md](SPEC.md) com palavras nossas. O verificador [`tools/cleanroom_check.py`](../tools/cleanroom_check.py) confirma 0 ocorrências de texto/classe do RubyMine no repositório.
 - **Escopo:** o VS Code puro só tem gramática de Ruby; todo o "suporte" vem de extensões. Logo, o diferencial do Rubaxe é trazer o suporte do RubyMine com a cara do VS Code.
 
@@ -20,7 +20,7 @@ IDE para Ruby com o **suporte à linguagem do RubyMine** e o **layout/estilo do 
 
 - **Depurador:** rdbg via DAP — breakpoints (linha e condicional), passos, variáveis, inspeção, pilha, console de avaliação, depurar testes, anexar a processo.
 - **Testes avançados:** view "Testes" com resultado por exemplo, ▶ na margem, reexecutar falhas, cobertura e profiler sem gems extras (helpers Ruby em `src/ruby/`).
-- **Rails:** arquivo relacionado (Ctrl+Shift+R), generators/destroy, servidor, console, migrations, completar rotas e chaves i18n.
+- **Rails:** arquivo relacionado (Shift+Alt+R), generators/destroy, servidor, console, migrations, completar rotas e chaves i18n.
 - **Recursos do RubyMine:** 12 intentions e 3 gerações no Ctrl+., inlay hints, realce semântico, hierarquia de tipos, chamadas do método, seletor de interpretador, lista de gems, estilo de código → RuboCop, `.rbs`.
 - **Ferramentas:** terminal integrado (PowerShell, IRB, Rails console, enviar seleção), Git (status, diff, stage, commit, blame, branches).
 - **Entrega:** abre em ~0,7 s; instalador Windows com `npm run dist`; logo na tela inicial e ícone da janela/instalador.
@@ -47,7 +47,7 @@ Papéis em [`.claude/agents/`](../.claude/agents): **frontend** (`src/renderer`)
 ## Pendências
 
 - **Ambiente:** apps Rails 8.1 em Ruby 4.0/Windows precisam de `gem "fiddle"` no Gemfile para o `rails console`.
-- **Adiados de propósito (sem pedido concreto, custo alto):** inspeções próprias além do RuboCop, rename que entende Rails, cliente HTTP, ferramentas de banco de dados, tema claro.
+- **Adiados de propósito (sem pedido concreto, custo alto):** lista completa na seção 6 do [CHECKLIST](CHECKLIST.md) — inspeções próprias, rename que entende Rails, cliente HTTP, banco de dados, tema claro e itens menores da SPEC.
 - **Entrega:** assinatura de código do instalador (precisa de um certificado); Linux: gerar com `npm run dist:linux` numa máquina Linux e testar; macOS: gerar e testar num Mac.
 
 Detalhe completo das fases em [CHECKLIST.md](CHECKLIST.md).

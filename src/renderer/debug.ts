@@ -1,7 +1,8 @@
 // Debugger: DAP client for rdbg (via main process), gutter breakpoints, debug view and debug console.
 import type * as M from 'monaco-editor';
-import { $, api, basename, h, icon, ws } from './dom.ts';
+import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
+import * as Features from './features.ts';
 import * as Panel from './panel.ts';
 import { prompt } from './quick-input.ts';
 
@@ -84,9 +85,14 @@ function setBreakpoint(model: M.editor.ITextModel, line: number, bp: Bp | null) 
   void sendBreakpoints(key);
 }
 
+function enabled() {
+  if (!Features.on('debugger')) notify('Esta funcionalidade está desativada em Configurações.');
+  return Features.on('debugger');
+}
+
 export function toggleBreakpoint(line = Editor.editor.getPosition()?.lineNumber) {
   const model = Editor.editor.getModel();
-  if (!model || !line) return;
+  if (!model || !line || !enabled()) return;
   trackLines(model);
   const exists = bps.get(model.uri.toString())?.some(b => b.line === line);
   setBreakpoint(model, line, exists ? null : { line });
@@ -94,10 +100,11 @@ export function toggleBreakpoint(line = Editor.editor.getPosition()?.lineNumber)
 
 export async function conditionalBreakpoint(line = Editor.editor.getPosition()?.lineNumber) {
   const model = Editor.editor.getModel();
-  if (!model || !line) return;
+  if (!model || !line || !enabled()) return;
   trackLines(model);
   const old = bps.get(model.uri.toString())?.find(b => b.line === line);
   const condition = await prompt(`Condição do breakpoint na linha ${line} (Ruby; vazio remove a condição)`, old?.condition ?? '');
+  if (condition === undefined) return; // Esc keeps the current condition; an empty answer removes it
   setBreakpoint(model, line, { line, condition: condition || undefined });
 }
 
@@ -121,6 +128,7 @@ export async function start(cmd: string, args: string[]) {
 }
 
 export async function attach() {
+  if (!enabled()) return;
   const target = await prompt('Anexar: host:porta [pasta do projeto no servidor] — ex.: 10.0.0.5:12345 /app (processo iniciado com rdbg --open --port=PORTA)', '127.0.0.1:12345');
   const m = target && /^([^\s:]+):(\d+)(?:\s+(.+))?$/.exec(target.trim());
   if (!m) return;
