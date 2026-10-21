@@ -107,6 +107,8 @@ async function search(root: string, query: string, opts: { regex: boolean; caseS
 function startLsp(cmd: string, cwd: string) {
   stopLsp();
   const child = lsp = shellSpawn(cmd, [], cwd);
+  // ruby-lsp creates .ruby-lsp before it answers; on Windows dot-folders are visible, so mark it hidden for Explorer too.
+  if (process.platform === 'win32') child.stdout!.once('data', () => spawn('attrib', ['+h', path.join(cwd, '.ruby-lsp')]));
   child.stdout!.on('data', createParser(msg => send('lspMessage', msg)));
   child.stderr!.on('data', d => send('lspLog', d.toString()));
   child.on('error', e => send('lspLog', e.message + '\n'));
@@ -181,7 +183,7 @@ ipcMain.handle('openFolder', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('readDir', async (_e, dir: string) => (await fs.readdir(dir, { withFileTypes: true }))
-  .filter(d => d.name !== '.git')
+  .filter(d => d.name !== '.git' && d.name !== '.ruby-lsp') // .ruby-lsp: ruby-lsp's private bundle, not project code
   .map(d => ({ name: d.name, path: path.join(dir, d.name), dir: d.isDirectory() }))
   .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
 ipcMain.handle('readFile', (_e, p: string) => fs.readFile(p, 'utf8'));
