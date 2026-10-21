@@ -18,18 +18,17 @@ O Rubaxe é um editor feito para quem programa em Ruby e Rails: abre em menos de
 
 ## Instalação pelo instalador (Windows)
 
-1. **Instale o Ruby.** Baixe o *Ruby+Devkit* em [rubyinstaller.org](https://rubyinstaller.org) (3.4 ou mais novo) e, no fim da instalação, deixe marcada a opção que roda o `ridk install`. Pelo terminal também funciona:
-   ```powershell
-   winget install RubyInstallerTeam.RubyWithDevKit.4.0
-   ```
-2. **Instale o servidor de linguagem** num terminal novo:
-   ```powershell
-   gem install ruby-lsp
-   ```
-   O depurador usa a gem `debug`, que já vem com o Ruby.
-3. **Baixe o Rubaxe:** em [Releases](https://github.com/ryan-ggarcia/Rubaxe/releases), pegue o arquivo `Rubaxe-Setup-<versão>.exe`.
-4. **Execute o instalador.** Como ele ainda não tem assinatura digital, o Windows pode mostrar "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**.
-5. **Abra um projeto:** `Ctrl+O` e escolha a pasta. A barra de status mostra a versão do Ruby e o Ruby LSP iniciando; na primeira vez, projetos com Gemfile levam alguns segundos para indexar.
+1. **Baixe o Rubaxe:** em [Releases](https://github.com/ryan-ggarcia/Rubaxe/releases), pegue o arquivo `Rubaxe-Setup-<versão>.exe`.
+2. **Execute o instalador.** Como ele ainda não tem assinatura digital, o Windows pode mostrar "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**.
+3. **Deixe o instalador configurar o Ruby.** No fim, ele pergunta se deve configurar o Ruby: responda **Sim** e uma janela mostra o progresso. Ele instala o que faltar (e pula o que você já tem):
+   - o Ruby+Devkit (do [RubyInstaller](https://rubyinstaller.org)), se não houver Ruby no computador;
+   - o toolchain C (`ridk install`), que algumas gems precisam para compilar;
+   - a gem `ruby-lsp`, que dá o autocompletar, os erros ao vivo e a navegação.
+
+   Precisa de internet e pode levar alguns minutos. Se pular ou algo falhar, rode depois no Rubaxe: paleta (`Ctrl+Shift+P`) → **Ruby: Configurar Ambiente**.
+4. **Abra um projeto:** `Ctrl+O` e escolha a pasta. A barra de status mostra a versão do Ruby e o Ruby LSP iniciando; na primeira vez, projetos com Gemfile levam alguns segundos para indexar.
+
+Prefere configurar o Ruby à mão? Instale o *Ruby+Devkit* (`winget install RubyInstallerTeam.RubyWithDevKit.4.0`), rode `ridk install` e depois `gem install ruby-lsp`.
 
 ## Configuração
 

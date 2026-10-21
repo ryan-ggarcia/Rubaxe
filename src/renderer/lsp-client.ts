@@ -402,7 +402,7 @@ export const refreshDiagnostics = () => opened.forEach(m => Features.on('diagnos
 api.onLspMessage(onMessage);
 api.onLspLog(text => hooks?.log(text));
 api.onLspExit(code => {
-  const message = `O Ruby LSP encerrou (código ${code}). Instale com: gem install ruby-lsp`;
+  const message = `O Ruby LSP encerrou (código ${code}). Para instalar: paleta (Ctrl+Shift+P) → "Ruby: Configurar Ambiente", ou gem install ruby-lsp`;
   clearInterval(keepAlive);
   ready = false;
   rejectPending(message); // a pending initialize reports this same message from start()

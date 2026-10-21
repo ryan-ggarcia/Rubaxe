@@ -76,6 +76,7 @@ const commands: Command[] = [
   { id: 'terminalAbnt', label: 'Exibir: Terminal', key: "Ctrl+'", run: () => Terminal.show() },
   { id: 'terminalNew', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+`', icon: 'add', run: () => Terminal.create() },
   { id: 'irb', label: 'Ruby: Console IRB', icon: 'terminal', run: () => openIrb() },
+  { id: 'setupRuby', label: 'Ruby: Configurar Ambiente (Ruby, ruby-lsp, ridk)', icon: 'tools', run: () => setupRuby() },
   { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Ctrl+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
   { id: 'scmView', label: 'Exibir: Controle de Código', key: 'Ctrl+Shift+G', icon: 'source-control', run: () => showView('scm') },
   { id: 'gitCommit', label: 'Git: Commit', icon: 'check', run: () => Git.commit() },
@@ -94,8 +95,12 @@ const commands: Command[] = [
 
 const debugFile = () => Ruby.runFile(Debug.start, 'debugger');
 const openIrb = () => Terminal.create('irb', ws.hasGemfile ? 'bundle exec irb' : 'irb', true);
+// Same script the installer offers: Ruby+Devkit if missing, ridk toolchain, ruby-lsp. Runs in a terminal so progress shows.
+const setupRuby = async () => api.platform === 'win32'
+  ? void Terminal.create('configurar ruby', `powershell -NoProfile -ExecutionPolicy Bypass -File "${await api.rubyHelpers()}${ws.sep}setup-ruby.ps1"`)
+  : notify('No Linux/macOS: instale o Ruby por um gerenciador de versões (rbenv, asdf, mise…) e rode gem install ruby-lsp.');
 
-const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'rerunFailed', 'coverageAll', 'profileFile', 'gotoTest', 'railsRelated', 'railsGenerate', 'railsServer', 'rails.db.migrate', 'irb', 'railsConsole', 'sendToConsole', 'selectRuby', 'typeHierarchy', 'callers', 'codeStyle', 'stop', 'rake', 'bundle.install', 'bundle.update', 'bundle.outdated', 'restartLsp', 'lspLog'];
+const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'rerunFailed', 'coverageAll', 'profileFile', 'gotoTest', 'railsRelated', 'railsGenerate', 'railsServer', 'rails.db.migrate', 'irb', 'railsConsole', 'sendToConsole', 'setupRuby', 'selectRuby', 'typeHierarchy', 'callers', 'codeStyle', 'stop', 'rake', 'bundle.install', 'bundle.update', 'bundle.outdated', 'restartLsp', 'lspLog'];
 
 // "Ctrl+Shift+P" style keys -> handler; compared with the normalized key of each keydown.
 const keymap = new Map(commands.filter(c => c.key).map(c => [c.key!.toLowerCase(), c]));
