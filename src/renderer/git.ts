@@ -8,7 +8,10 @@ import * as Features from './features.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
 let top = ''; // repository root ('' = not a repo)
-let branch = '';
+export let branch = '';
+export let changes = 0; // files with staged or unstaged changes
+const listeners: (() => void)[] = [];
+export const onDidRefresh = (fn: () => void) => listeners.push(fn);
 let timer: ReturnType<typeof setTimeout> | undefined;
 const blames = new Map<M.editor.ITextModel, BlameLine[]>();
 let blameIds: string[] = [];
@@ -39,6 +42,7 @@ export async function refresh() {
   if (!ws.root) return;
   if (!Features.on('git')) {
     top = branch = '';
+    changes = 0;
     renderStatus();
     return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Git desativado em Configurações.'));
   }
@@ -46,6 +50,7 @@ export async function refresh() {
   top = root.code === 0 ? root.out.trim().replace(/\//g, ws.sep) : '';
   if (!top) {
     branch = '';
+    changes = 0;
     renderStatus();
     const init = h('button', { className: 'button' }, icon('repo'), ' Inicializar repositório');
     init.onclick = async () => { if (await gitOk('init')) void refresh(); };
@@ -54,6 +59,7 @@ export async function refresh() {
   const r = await git('status', '--porcelain=v1', '-b', '-z', '-uall'); // -uall: an untracked folder lists its files, not one nameless row
   const s = parseGitStatus(r.out);
   branch = s.branch;
+  changes = new Set([...s.staged, ...s.unstaged].map(c => c.path)).size;
   renderStatus();
   const section = (title: string, list: GitChange[], staged: boolean) => {
     const action = (name: string, tip: string, run: () => unknown) => { const el = icon(name, tip); el.classList.add('row-action'); el.onclick = e => { e.stopPropagation(); void run(); }; return el; };
@@ -130,19 +136,21 @@ export async function switchBranch() {
 }
 
 // Push/pull/fetch. api.exec has no env option, so GIT_TERMINAL_PROMPT=0 is not set (needs backend support).
-export async function sync(kind: 'push' | 'pull' | 'fetch') {
-  if (!enabled()) return;
-  if (!top) return notify('Esta pasta não é um repositório Git.');
+export async function sync(kind: 'push' | 'pull' | 'fetch'): Promise<boolean> {
+  if (!enabled()) return false;
+  if (!top) { notify('Esta pasta não é um repositório Git.'); return false; }
   const remotes = (await git('remote')).out.split(/\s+/).filter(Boolean);
-  if (!remotes.length) return notify('Nenhum remote configurado. Use: git remote add origin <url>');
+  if (!remotes.length) { notify('Nenhum remote configurado. Use: git remote add origin <url>'); return false; }
   let args: string[] = [kind];
   if (kind === 'push' && (await git('rev-parse', '--abbrev-ref', '@{u}')).code !== 0 && remotes.includes('origin')) args = ['push', '-u', 'origin', branch];
   notify(`git ${kind}…`);
-  if (await gitOk(...args)) {
+  const ok = await gitOk(...args);
+  if (ok) {
     notify(`Git ${kind} concluído.`);
     if (kind === 'pull') { await Editor.syncFromDisk(); await refreshWorkspace(); }
   }
   void refresh();
+  return ok;
 }
 
 // ---------- blame ----------
@@ -191,6 +199,7 @@ function renderStatus() {
   el.hidden = !branch;
   el.replaceChildren(icon('git-branch'), h('span', {}, branch));
   el.title = 'Trocar branch';
+  listeners.forEach(fn => fn());
 }
 
 export function initGit() {

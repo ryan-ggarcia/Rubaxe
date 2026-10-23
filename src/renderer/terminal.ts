@@ -17,7 +17,7 @@ export async function pickProfile(placeholder: string, run: (p: Profile) => void
   quickPick({ placeholder, items: () => shells.map(p => ({ label: p.name, description: p.path, icon: PROFILE_ICONS.find(([re]) => re.test(p.name))?.[1] ?? 'terminal', run: () => run(p) })) });
 }
 
-interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string }
+export interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string }
 
 // irb(main):001>, pry(main)>, myapp(dev)> — the console is ready for input once its prompt shows.
 const PROMPT = /\w+\([\w:-]+\)(:\d+)?[>*]\s*$/;
@@ -35,6 +35,9 @@ const xtermTheme = () => document.documentElement.dataset.theme === 'light' ? LI
 export const applyTheme = () => terms.forEach(t => { t.xterm.options.theme = xtermTheme(); });
 
 const terms: Term[] = [];
+const listeners: ((t: Term) => void)[] = [];
+export const onDidChange = (fn: (t: Term) => void) => listeners.push(fn);
+export const touch = (t: Term) => listeners.forEach(fn => fn(t));
 let active: Term | undefined;
 let seq = 0;
 
@@ -96,10 +99,12 @@ export function show() {
 export function kill(t = active) {
   if (!t) return;
   if (t.alive) void api.ptyKill(t.id);
+  t.alive = false;
   t.xterm.dispose();
   t.el.remove();
   terms.splice(terms.indexOf(t), 1);
   select(terms[terms.length - 1]);
+  touch(t);
 }
 
 // Sends the selection (or the current line) to the newest console terminal, opening IRB if none is running.
@@ -132,7 +137,8 @@ export function initTerminal() {
     const t = terms.find(x => x.id === id);
     if (!t) return;
     t.xterm.write(data);
-    t.tail = (t.tail + data.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '')).slice(-300);
+    t.tail = (t.tail + data.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '')).slice(-2000);
+    touch(t);
   });
   api.onPtyExit((id, code) => {
     const t = terms.find(x => x.id === id);
@@ -140,5 +146,6 @@ export function initTerminal() {
     t.alive = false;
     t.xterm.write(`\r\n\x1b[90m[processo encerrado com código ${code}]\x1b[0m\r\n`);
     select(active);
+    touch(t);
   });
 }

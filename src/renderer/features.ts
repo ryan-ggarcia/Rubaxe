@@ -60,11 +60,13 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['git', 'Git: status, diff, stage, commit, blame, branches', 'ok'],
     ['httpClient', 'Cliente HTTP', 'planned'],
     ['database', 'Ferramentas de banco de dados', 'planned'],
+    ['rightPanel', 'Painel direito: arquivos Rails relacionados, servidor e Git (Ctrl+Alt+B)', 'ok'],
   ]],
 ];
 
 const SETTINGS: Setting[] = [
   ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
+  ['Aparência', 'window.controls', 'Botões da janela (fora do macOS): "nativos" usa os do sistema; "mac" desenha círculos coloridos à esquerda. Reinicia o Rubaxe ao mudar.', ['nativos', 'mac'], 'nativos'],
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
   ['Ruby', 'ruby.lspPath', 'Comando do servidor Ruby LSP (gem install ruby-lsp).', 'string', 'ruby-lsp'],
   ['Ruby', 'test.framework', 'Framework de testes.', ['auto', 'rspec', 'minitest'], 'auto'],

@@ -11,22 +11,37 @@
 </head>
 <body>
   <header id="titlebar">
-    <div id="menubar" role="menubar"></div>
-    <div id="command-center" title="Ir para arquivo (Ctrl+P)">
-      <span class="codicon codicon-search"></span><span id="command-center-label">Rubaxe</span>
+    <div id="wc-mac" role="group" aria-label="Controles da janela">
+      <button class="wc wc-close" id="wc-close" aria-label="Fechar janela" title="Fechar"><span class="codicon codicon-close"></span></button>
+      <button class="wc wc-min" id="wc-min" aria-label="Minimizar janela" title="Minimizar"><span class="codicon codicon-chrome-minimize"></span></button>
+      <button class="wc wc-max" id="wc-max" aria-label="Maximizar janela" title="Maximizar"><span class="codicon codicon-chrome-maximize"></span></button>
+    </div>
+    <button class="tb-btn" id="menu-btn" aria-label="Menu principal" aria-haspopup="menu" aria-expanded="false" title="Menu"><span class="codicon codicon-menu"></span></button>
+    <div id="menubar" role="menu" aria-label="Menu principal" hidden></div>
+    <div id="brand"><img src="../../assets/logo.png" alt="" width="18" height="18"><span>Rubaxe</span></div>
+    <button class="tb-chip" id="folder-btn" aria-label="Abrir pasta" title="Abrir pasta (Ctrl+O)"><span id="folder-label">Abrir pasta</span><span class="codicon codicon-chevron-down"></span></button>
+    <button class="tb-chip" id="branch-btn" aria-label="Trocar branch" title="Trocar branch" hidden><span class="codicon codicon-git-branch"></span><span id="branch-label"></span></button>
+    <button id="command-center" aria-label="Pesquisar no projeto" title="Ir para arquivo (Ctrl+P)">
+      <span class="codicon codicon-search"></span><span id="command-center-label">Pesquisar no projeto...</span>
+    </button>
+    <div id="titlebar-actions">
+      <button class="tb-btn" id="tb-run" aria-label="Executar arquivo" title="Executar arquivo (Ctrl+F5)"><span class="codicon codicon-play"></span></button>
+      <button class="tb-btn" id="tb-terminal" aria-label="Alternar terminal" title="Alternar terminal (Ctrl+J)"><span class="codicon codicon-terminal"></span></button>
+      <button class="tb-btn" id="tb-right" aria-label="Alternar painel direito" title="Alternar painel direito (Ctrl+Alt+B)"><span class="codicon codicon-layout-sidebar-right"></span></button>
+      <button class="tb-btn" id="tb-settings" aria-label="Configurações" title="Configurações (Ctrl+,)"><span class="codicon codicon-settings-gear"></span></button>
     </div>
   </header>
 
   <div id="main">
-    <nav id="activitybar">
-      <div class="ab-item" data-view="explorer" title="Explorer (Ctrl+Shift+E)"><span class="codicon codicon-files"></span></div>
-      <div class="ab-item" data-view="search" title="Pesquisar (Ctrl+Shift+F)"><span class="codicon codicon-search"></span></div>
-      <div class="ab-item" data-view="scm" title="Controle de Código (Ctrl+Shift+G)"><span class="codicon codicon-source-control"></span></div>
-      <div class="ab-item" data-view="debug" title="Executar e Depurar (Ctrl+Shift+D)"><span class="codicon codicon-debug-alt"></span></div>
-      <div class="ab-item" data-view="tests" title="Testes"><span class="codicon codicon-beaker"></span></div>
-      <div class="ab-item" data-view="ruby" title="Ruby"><span class="codicon codicon-ruby"></span></div>
+    <nav id="activitybar" aria-label="Barra de atividades">
+      <div class="ab-item" role="button" tabindex="0" aria-label="Explorer" data-view="explorer" title="Explorer (Ctrl+Shift+E)"><span class="codicon codicon-files"></span></div>
+      <div class="ab-item" role="button" tabindex="0" aria-label="Pesquisar" data-view="search" title="Pesquisar (Ctrl+Shift+F)"><span class="codicon codicon-search"></span></div>
+      <div class="ab-item" role="button" tabindex="0" aria-label="Controle de Código" data-view="scm" title="Controle de Código (Ctrl+Shift+G)"><span class="codicon codicon-source-control"></span></div>
+      <div class="ab-item" role="button" tabindex="0" aria-label="Executar e Depurar" data-view="debug" title="Executar e Depurar (Ctrl+Shift+D)"><span class="codicon codicon-debug-alt"></span></div>
+      <div class="ab-item" role="button" tabindex="0" aria-label="Testes" data-view="tests" title="Testes"><span class="codicon codicon-beaker"></span></div>
+      <div class="ab-item" role="button" tabindex="0" aria-label="Ruby" data-view="ruby" title="Ruby"><span class="codicon codicon-ruby"></span></div>
       <div class="ab-spacer"></div>
-      <div class="ab-item" id="ab-settings" title="Configurações (Ctrl+,)"><span class="codicon codicon-settings-gear"></span></div>
+      <div class="ab-item" id="ab-settings" role="button" tabindex="0" aria-label="Configurações" title="Configurações (Ctrl+,)"><span class="codicon codicon-settings-gear"></span></div>
     </nav>
 
     <aside id="sidebar">
@@ -79,12 +94,14 @@
     <div class="sash vertical" id="sash-side"></div>
 
     <div id="workbench">
-      <div id="tabs"></div>
+      <div id="editor-card">
+      <div id="tabs" hidden></div>
       <div id="editor-area">
         <div id="editor" hidden></div>
         <div id="diff-editor" hidden></div>
         <div id="settings-page" hidden></div>
         <div id="welcome"></div>
+      </div>
       </div>
       <div class="sash horizontal" id="sash-panel"></div>
       <section id="panel">
@@ -114,6 +131,7 @@
         </div>
       </section>
     </div>
+    <aside id="rightpanel" aria-label="Painel direito"></aside>
   </div>
 
   <footer id="statusbar"><div id="sb-left"></div><div id="sb-right"></div></footer>

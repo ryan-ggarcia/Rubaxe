@@ -17,6 +17,11 @@ const MAX_HITS = 2000;
 let win: BrowserWindow | undefined;
 let lsp: ChildProcess | null = null;
 let allowClose = false;
+let relaunch = false; // set by the relaunch request, cleared by any other close attempt
+let nativeControls = true; // false: window.controls 'mac' on Windows/Linux, the renderer draws the buttons
+// backgroundMaterial needs Windows 11 22H2 (build 22621); vibrancy is macOS-only. Everything else stays solid.
+const material = process.platform === 'darwin' ? 'vibrancy'
+  : process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621 ? 'acrylic' : 'none';
 const runs = new Map<string, ChildProcess>();
 let debug: { proc?: ChildProcess; sock?: net.Socket } = {};
 const ptys = new Map<string, IPty>();
@@ -331,24 +336,41 @@ ipcMain.handle('setRubyBin', (_e, dir: string) => { rubyBin = dir; });
 ipcMain.on('runWrite', (_e, id: string, data: string) => runs.get(id)?.stdin?.write(data));
 ipcMain.handle('stop', (_e, id: string) => { const c = runs.get(id); if (c) kill(c); });
 // A truncated settings file must not block startup.
-ipcMain.handle('loadSettings', () => fs.readFile(settingsPath(), 'utf8').then(JSON.parse).catch(() => ({})));
+const loadSettings = () => fs.readFile(settingsPath(), 'utf8').then(JSON.parse).catch(() => ({})) as Promise<Record<string, unknown> | null>;
+ipcMain.handle('loadSettings', loadSettings);
 ipcMain.handle('saveSettings', (_e, s: unknown) => fs.writeFile(settingsPath(), JSON.stringify(s, null, 2)));
 ipcMain.handle('lspStart', (_e, cmd: string, cwd: string) => startLsp(cmd, cwd));
 ipcMain.handle('lspStop', () => stopLsp());
 ipcMain.on('lspSend', (_e, msg: unknown) => { lsp?.stdin?.write(frame(msg)); });
-const hex = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
-// macOS has no titleBarOverlay (traffic lights instead).
+// #rrggbbaa: over acrylic the overlay must be see-through.
+const hex = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c);
+// macOS has no titleBarOverlay (traffic lights instead); in 'mac' mode there is none to recolor (it would throw).
 ipcMain.on('setTitleBarOverlay', (_e, color: unknown, symbolColor: unknown) => {
-  if (process.platform !== 'darwin' && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: 35 });
+  if (process.platform !== 'darwin' && nativeControls && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: 35 });
 });
+ipcMain.handle('windowMaterial', () => material);
+ipcMain.on('windowControl', (_e, action: unknown) => {
+  if (!win || win.isDestroyed()) return;
+  if (action === 'minimize') win.minimize();
+  else if (action === 'maximize') win.isMaximized() ? win.unmaximize() : win.maximize();
+  else if (action === 'close') win.close();
+});
+// Same unsaved-tabs confirmation as closing; confirmClose then quits with the relaunch armed.
+ipcMain.on('relaunch', () => { relaunch = true; send('closeRequest'); });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Windows/Linux use the HTML menu bar; macOS needs a native menu or Cmd+C/V/X/A and Cmd+Q stop working.
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
+  // macOS always keeps its traffic lights.
+  nativeControls = process.platform === 'darwin' || (await loadSettings())?.['window.controls'] !== 'mac';
   win = new BrowserWindow({
-    width: 1400, height: 900, backgroundColor: '#1F1F1F', title: 'Rubaxe',
+    width: 1400, height: 900, title: 'Rubaxe',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'), // the logo's mark without the wordmark
-    titleBarStyle: 'hidden', titleBarOverlay: { color: '#181818', symbolColor: '#CCCCCC', height: 35 },
+    // Transparent base color: the page background shows the material where its CSS is transparent.
+    backgroundColor: material === 'none' ? '#1F1F1F' : '#00000000',
+    ...(material === 'acrylic' && { backgroundMaterial: 'acrylic' }),
+    ...(material === 'vibrancy' && { vibrancy: 'under-window', visualEffectState: 'active' }),
+    titleBarStyle: 'hidden', ...(nativeControls && { titleBarOverlay: { color: '#181818', symbolColor: '#CCCCCC', height: 35 } }),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   // The preload grants file and process access: never let a remote page load in this window.
@@ -368,12 +390,15 @@ app.whenReady().then(() => {
   win.on('close', e => {
     if (allowClose) return;
     e.preventDefault();
+    relaunch = false;
     win!.webContents.send('closeRequest');
   });
+  win.on('maximize', () => send('maximizeChange', true));
+  win.on('unmaximize', () => send('maximizeChange', false));
   win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
 });
 
-ipcMain.handle('confirmClose', () => { allowClose = true; win?.close(); });
+ipcMain.handle('confirmClose', () => { if (relaunch) app.relaunch(); allowClose = true; win?.close(); });
 
 app.on('window-all-closed', () => {
   stopLsp();

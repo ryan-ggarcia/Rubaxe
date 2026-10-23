@@ -1,32 +1,38 @@
-// Application menu bar in the title bar (File, Edit, ...): click opens, hover switches, arrows/Enter/Esc drive it.
+// Application menu behind the title bar's hamburger button: a list of menus (File, Edit, ...); hover/click opens one to the side, arrows/Enter/Esc drive it.
 import { $, h } from './dom.ts';
 
 export interface MenuItem { label: string; key?: string; run: () => void }
 export type Menu = [title: string, items: (MenuItem | null)[]]; // null = separator
 
-export function initMenubar(menus: Menu[]) {
+export function initMenubar(menus: Menu[], button: HTMLElement) {
   const bar = $('#menubar');
-  let openIdx = -1, sel = -1;
+  let openIdx = -1, sel = -1, inSub = false; // inSub: keyboard focus is in the submenu, not on the menu list
   let popup: HTMLElement | undefined;
   let rows: (HTMLElement | undefined)[] = [];
   const titles = menus.map(([title]) => h('div', { className: 'menu-title', role: 'menuitem', textContent: title }));
   titles.forEach(t => t.setAttribute('aria-haspopup', 'true'));
 
-  const close = () => {
+  const closeAll = () => {
+    closeSub();
+    bar.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+  };
+  const closeSub = () => {
     popup?.remove();
     popup = undefined;
     if (openIdx >= 0) titles[openIdx].classList.remove('open');
     titles.forEach(t => t.setAttribute('aria-expanded', 'false'));
     openIdx = sel = -1;
+    inSub = false;
   };
   const select = (i: number) => {
     rows[sel]?.classList.remove('selected');
     sel = i;
     rows[i]?.classList.add('selected');
   };
-  const choose = (item: MenuItem) => { close(); item.run(); };
+  const choose = (item: MenuItem) => { closeAll(); item.run(); };
   const open = (i: number) => {
-    close();
+    closeSub();
     openIdx = i;
     titles[i].classList.add('open');
     titles[i].setAttribute('aria-expanded', 'true');
@@ -34,29 +40,38 @@ export function initMenubar(menus: Menu[]) {
     rows = items.map(item => {
       if (!item) return undefined;
       const row = h('div', { className: 'menu-item', role: 'menuitem' }, h('span', { className: 'label' }, item.label), h('span', { className: 'desc' }, item.key ?? ''));
-      row.onmouseenter = () => select(rows.indexOf(row));
+      row.onmouseenter = () => { inSub = true; select(rows.indexOf(row)); };
       row.onclick = () => choose(item);
       return row;
     });
     popup = h('div', { className: 'menu-popup', role: 'menu' }, ...items.map((_, j) => rows[j] ?? h('div', { className: 'menu-sep', role: 'separator' })));
     const r = titles[i].getBoundingClientRect();
-    popup.style.left = `${r.left}px`;
-    popup.style.top = `${r.bottom}px`;
+    popup.style.left = `${bar.getBoundingClientRect().right + 4}px`;
+    popup.style.top = `${r.top - 6}px`;
     document.body.append(popup);
   };
 
   titles.forEach((t, i) => {
-    t.onclick = () => openIdx === i ? close() : open(i);
-    t.onmouseenter = () => { if (openIdx >= 0 && openIdx !== i) open(i); };
+    t.onclick = () => open(i);
+    t.onmouseenter = () => { if (openIdx !== i) open(i); };
   });
   bar.replaceChildren(...titles);
+  button.onclick = () => {
+    if (!bar.hidden) return closeAll();
+    const r = button.getBoundingClientRect();
+    bar.style.left = `${r.left}px`;
+    bar.style.top = `${r.bottom + 6}px`;
+    bar.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    open(0);
+  };
 
   window.addEventListener('mousedown', e => {
-    if (openIdx >= 0 && !bar.contains(e.target as Node) && !popup?.contains(e.target as Node)) close();
+    if (!bar.hidden && !bar.contains(e.target as Node) && !popup?.contains(e.target as Node) && !button.contains(e.target as Node)) closeAll();
   }, true);
-  window.addEventListener('blur', close);
+  window.addEventListener('blur', closeAll);
   window.addEventListener('keydown', e => {
-    if (openIdx < 0) return;
+    if (bar.hidden || openIdx < 0) return;
     const items = menus[openIdx][1];
     const step = (d: number) => {
       for (let n = 1; n <= items.length; n++) {
@@ -64,11 +79,14 @@ export function initMenubar(menus: Menu[]) {
         if (items[j]) return select(j);
       }
     };
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown') step(1);
-    else if (e.key === 'ArrowUp') step(-1);
-    else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') open((openIdx + (e.key === 'ArrowRight' ? 1 : -1) + menus.length) % menus.length);
-    else if (e.key === 'Enter') { const item = items[sel]; if (item) choose(item); else return; }
+    const move = (d: number) => open((openIdx + d + menus.length) % menus.length);
+    if (e.key === 'Escape') { closeAll(); button.focus(); }
+    else if (!inSub && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) move(e.key === 'ArrowDown' ? 1 : -1);
+    else if (!inSub && (e.key === 'ArrowRight' || e.key === 'Enter')) { inSub = true; step(1); }
+    else if (inSub && e.key === 'ArrowDown') step(1);
+    else if (inSub && e.key === 'ArrowUp') step(-1);
+    else if (inSub && e.key === 'ArrowLeft') { inSub = false; rows[sel]?.classList.remove('selected'); sel = -1; }
+    else if (inSub && e.key === 'Enter') { const item = items[sel]; if (item) choose(item); else return; }
     else return;
     e.preventDefault();
     e.stopPropagation();

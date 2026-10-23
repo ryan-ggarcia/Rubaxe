@@ -157,6 +157,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 - [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão)
 - [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status), push/pull/fetch
+- [x] Redesign: cards flutuantes com cantos arredondados, acrílico/vibrancy (sólido sem material), topo limpo com menu ☰, ícones SVG próprios por tipo de arquivo, painel direito (Rails relacionados, servidor, Git; Ctrl+Alt+B) e botões de janela estilo macOS (`window.controls`)
 - [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
 

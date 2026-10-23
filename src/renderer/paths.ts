@@ -344,3 +344,15 @@ export function parseInspections(out: string): Inspection[] {
     return [];
   }
 }
+
+// Icon family of a file name (explorer and tabs).
+export function fileKind(name: string): 'ruby' | 'erb' | 'yaml' | 'json' | 'lock' | 'md' | 'js' | 'ts' | 'css' | 'html' | 'file' {
+  if (/\.html?\.erb$|\.erb$/i.test(name)) return 'erb';
+  if (/\.(rb|rake|gemspec|ru)$|^(Gemfile|Rakefile)$/.test(name)) return 'ruby';
+  const ext = /\.([^.]+)$/.exec(name)?.[1].toLowerCase();
+  const byExt: Record<string, ReturnType<typeof fileKind>> = { yml: 'yaml', yaml: 'yaml', json: 'json', lock: 'lock', md: 'md', js: 'js', mjs: 'js', ts: 'ts', css: 'css', scss: 'css', html: 'html', htm: 'html' };
+  return (ext && byExt[ext]) || 'file';
+}
+
+// "* Listening on http://127.0.0.1:3000" from Puma's output; '' while the server has not announced a port.
+export const serverPort = (text: string): string => /Listening on (?:https?|tcp|ssl):\/\/(?:\[[^\]]+\]|[^\s:/]+):(\d+)/.exec(text)?.[1] ?? '';

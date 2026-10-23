@@ -1,11 +1,11 @@
 // Rails: related-file navigation, generators, server and migrations, route helper and i18n key completion.
-import { abs, api, notify, ws } from './dom.ts';
+import { abs, api, basename, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import { pluralize } from './paths.ts';
 import { moveEntry, refreshWorkspace } from './explorer.ts';
 import * as Lsp from './lsp-client.ts';
 import * as Features from './features.ts';
-import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsRenameText, railsResource, railsReview, relativeTo, testCandidates, underscore } from './paths.ts';
+import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsRenameText, railsResource, railsReview, relativeTo, serverPort, testCandidates, underscore } from './paths.ts';
 import { prompt, quickPick, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
 import * as Panel from './panel.ts';
@@ -67,6 +67,22 @@ export async function related() {
   if (!items.length) return notify('Nenhum arquivo Rails relacionado encontrado.');
   items.sort((a, b) => a.rank - b.rank);
   quickPick({ placeholder: 'Ir para arquivo Rails relacionado', items: q => items.filter(i => `${i.label} ${i.description}`.toLowerCase().includes(q.toLowerCase())) });
+}
+
+// Right panel: existing candidates grouped as Routing / Controllers / Models / Views for the active file.
+export async function relatedFiles(): Promise<[group: string, files: { name: string; path: string }[]][]> {
+  const rel = Editor.active?.kind === 'file' && Editor.active.path && relativeTo(ws.root, Editor.active.path);
+  if (!rel || !ws.isRails || !Features.on('railsNav')) return [];
+  const GROUP: Record<string, string> = { Routes: 'Roteamento', Controller: 'Controladores', Model: 'Modelos', Views: 'Views', Layout: 'Views' };
+  const out = new Map<string, { name: string; path: string }[]>();
+  for (const c of railsRelated(rel)) {
+    const group = GROUP[c.kind];
+    if (!group) continue;
+    const path = abs(c.path);
+    const files = c.kind === 'Views' ? (await api.readDir(path).catch(() => [])).filter(e => !e.dir) : await api.exists(path) ? [{ name: basename(path), path }] : [];
+    if (files.length) out.set(group, [...(out.get(group) ?? []), ...files]);
+  }
+  return Object.values(GROUP).filter((g, i, all) => all.indexOf(g) === i && out.has(g)).map(g => [g, out.get(g)!]);
 }
 
 // Rename Post -> Article across models, controllers, helpers, views and tests. Constants go through the Ruby LSP
@@ -150,9 +166,13 @@ export function generate(destroy = false) {
 export const openConsole = () => ready('console') && Terminal.create('rails console', `${ruby()} bin/rails console`, true);
 // Runs in a terminal: Ctrl+C stops it, while the Output "Stop" (taskkill /F) would leave Puma's pid file behind.
 // A fresh --pid per run avoids "A server is already running" from a stale tmp/pids/server.pid.
+export const serverState = { term: undefined as Terminal.Term | undefined, port: '' };
 export async function server() {
   if (!ready('railsGenerators')) return;
-  await Terminal.create('rails server', `${ruby()} bin/rails server --pid "${await api.mkTemp()}${ws.sep}server.pid"`);
+  if (serverState.term?.alive) return Terminal.show();
+  serverState.port = '';
+  serverState.term = await Terminal.create('rails server', `${ruby()} bin/rails server --pid "${await api.mkTemp()}${ws.sep}server.pid"`);
+  if (serverState.term) Terminal.touch(serverState.term);
 }
 export const db = (task: string) => ready('railsGenerators') && Ruby.runCommand(ruby(), ['bin/rails', `db:${task}`], { onExit: () => { routes = undefined; } });
 
@@ -163,6 +183,7 @@ const loadI18n = () => i18n ??= Promise.all(ws.files.filter(f => /[\\/]config[\\
   .then(texts => [...new Set(texts.flatMap(localeKeys))].sort());
 
 export function initRails() {
+  Terminal.onDidChange(t => { if (t === serverState.term && !serverState.port) serverState.port = serverPort(t.tail); });
   // `bin/rails routes` and locale files are read once; saving them drops the cache.
   Editor.onDidSave(path => {
     if (/[\\/]config[\\/]routes\.rb$/.test(path)) routes = undefined;

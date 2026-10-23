@@ -1,8 +1,9 @@
 // Explorer tree (lazy, re-read on expand) and the file outline below it.
 import type * as M from 'monaco-editor';
-import { $, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
+import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
+import { fileSvg, folderSvg } from './file-icons.ts';
 import * as Lsp from './lsp-client.ts';
 import { ipcMessage } from './paths.ts';
 import { prompt, quickPick } from './quick-input.ts';
@@ -64,9 +65,10 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
     const open = expanded.has(e.path);
     const row = h('div', { className: 'tree-row' + (e.path === selected ? ' selected' : ''), title: e.path },
       h('span', { className: `codicon codicon-${e.dir ? (open ? 'chevron-down' : 'chevron-right') : 'blank'}` }),
-      ...(e.dir ? [] : [h('span', { className: `codicon codicon-${fileIcon(e.name)} file-icon` })]),
+      e.dir ? folderSvg(open) : fileSvg(e.name),
       h('span', { className: 'tree-label' }, e.name));
-    row.style.paddingLeft = `${8 + depth * 12}px`;
+    row.style.paddingLeft = `${6 + depth * 14}px`;
+    row.setAttribute('role', 'treeitem');
     row.onclick = async () => {
       selected = e.path;
       selectedIsDir = e.dir;

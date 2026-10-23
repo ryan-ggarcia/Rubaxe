@@ -58,7 +58,11 @@ const api = {
   onPtyExit: on<[id: string, code: number]>('ptyExit'),
   watchFolder: invoke<void, [root: string]>('watchFolder'),
   onFsChange: on<[paths: string[]]>('fsChange'),
-  setTitleBarOverlay: (color: string, symbolColor: string) => ipcRenderer.send('setTitleBarOverlay', color, symbolColor),
+  setTitleBarOverlay: (color: string, symbolColor: string) => ipcRenderer.send('setTitleBarOverlay', color, symbolColor), // #rrggbb or #rrggbbaa
+  windowMaterial: invoke<'acrylic' | 'vibrancy' | 'none'>('windowMaterial'), // 'none': use solid backgrounds
+  windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.send('windowControl', action), // maximize toggles restore
+  relaunch: () => ipcRenderer.send('relaunch'), // goes through onCloseRequest/confirmClose like a normal close
+  onMaximizeChange: on<[maximized: boolean]>('maximizeChange'),
 };
 
 export type RubaxeApi = typeof api;

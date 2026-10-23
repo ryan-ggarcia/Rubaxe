@@ -13,6 +13,7 @@ import { initMenubar, type Menu, type MenuItem } from './menu.ts';
 import pkg from '../../package.json' with { type: 'json' };
 import * as Panel from './panel.ts';
 import * as Rails from './rails.ts';
+import * as RightPanel from './right-panel.ts';
 import { eventKey, fuzzyScore, isGemfile, relativeTo, usesStandard } from './paths.ts';
 import { quickPick, setCloseHandler, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
@@ -38,6 +39,7 @@ const commands: Command[] = [
   { id: 'rubyView', label: 'Exibir: Ruby', icon: 'ruby', run: () => showView('ruby') },
   { id: 'toggleSidebar', label: 'Exibir: Alternar Barra Lateral', key: 'Ctrl+B', icon: 'layout-sidebar-left', run: () => toggleSidebar() },
   { id: 'togglePanel', label: 'Exibir: Alternar Painel', key: 'Ctrl+J', icon: 'layout-panel', run: () => togglePanel() },
+  { id: 'toggleRightPanel', label: 'Exibir: Alternar Painel Direito', key: 'Ctrl+Alt+B', icon: 'layout-sidebar-right', run: () => RightPanel.toggle() },
   { id: 'problems', label: 'Exibir: Problemas', key: 'Ctrl+Shift+M', icon: 'warning', run: () => Panel.show('problems') },
   { id: 'output', label: 'Exibir: Saída', key: 'Ctrl+Shift+U', icon: 'output', run: () => Panel.show('output') },
   { id: 'settings', label: 'Preferências: Abrir Configurações', key: 'Ctrl+,', icon: 'settings-gear', run: () => Editor.openSettings() },
@@ -148,7 +150,7 @@ const MENUS: [string, Entry[]][] = [
     act('Copiar Linha para Cima', 'editor.action.copyLinesUpAction', 'Shift+Alt+↑'), act('Copiar Linha para Baixo', 'editor.action.copyLinesDownAction', 'Shift+Alt+↓'),
     act('Mover Linha para Cima', 'editor.action.moveLinesUpAction', 'Alt+↑'), act('Mover Linha para Baixo', 'editor.action.moveLinesDownAction', 'Alt+↓'), null,
     act('Adicionar Cursor Acima', 'editor.action.insertCursorAbove', 'Ctrl+Alt+↑'), act('Adicionar Cursor Abaixo', 'editor.action.insertCursorBelow', 'Ctrl+Alt+↓'), act('Adicionar Próxima Ocorrência', 'editor.action.addSelectionToNextFindMatch', 'Ctrl+D')]],
-  ['Exibir', ['palette', null, 'explorer', 'search', 'scmView', 'debugView', 'testsView', 'rubyView', null, 'problems', 'output', 'debugConsole', 'terminal', null, 'toggleSidebar', 'togglePanel']],
+  ['Exibir', ['palette', null, 'explorer', 'search', 'scmView', 'debugView', 'testsView', 'rubyView', null, 'problems', 'output', 'debugConsole', 'terminal', null, 'toggleSidebar', 'toggleRightPanel', 'togglePanel']],
   ['Ir', ['quickOpen', 'workspaceSymbol', act('Ir para Linha...', 'editor.action.gotoLine', 'Ctrl+G'), null, 'gotoTest', 'railsRelated']],
   ['Executar', ['rspecFolder', 'debugStart', 'debugStop', null, 'runFile', 'runTests', 'runTestLine', 'runAllTests', 'stop', null, 'stepOver', 'stepInto', 'stepOut', 'toggleBreakpoint']],
   ['Terminal', ['terminalNew', 'terminalProfile', 'terminalDefault', 'terminal', null, 'irb', 'sendToConsole']],
@@ -289,7 +291,7 @@ async function openFolder(path?: string) {
   Rails.resetRails();
   resetExplorer();
   document.title = `${basename(target)} — Rubaxe`;
-  $('#command-center-label').textContent = basename(target);
+  $('#folder-label').textContent = basename(target);
   Features.set('window.lastFolder', target);
   void api.saveSettings(Features.all());
   renderWelcome();
@@ -300,6 +302,7 @@ async function openFolder(path?: string) {
   void Git.refresh();
   void checkBundle();
   void Ruby.loadGems($('#gems-body'));
+  RightPanel.schedule();
 }
 
 // ---------- quick open ----------
@@ -361,6 +364,7 @@ function onSettingChange(key: string) {
   if (key === 'features.diagnostics') Lsp.refreshDiagnostics();
   if (key === 'features.documentSymbols') void renderOutline();
   if (key === 'workbench.theme') applyTheme();
+  if (key === 'window.controls') { notify('Reiniciar para aplicar'); void api.saveSettings(Features.all()).then(() => api.relaunch()); }
   if (key === 'features.inspections') Ruby.inspectAll();
   if (key === 'ruby.lspPath' && ws.root) void startLsp();
   if (key === 'rubocop.standard' && ws.root) void startLsp();
@@ -374,12 +378,29 @@ function onSettingChange(key: string) {
 
 // ---------- boot ----------
 
+// 'mac' draws our own traffic-light circles (the main process creates the window without native controls); macOS keeps its own.
+function initWindowControls() {
+  if (Features.get<string>('window.controls') !== 'mac' || api.platform === 'darwin') return;
+  document.body.classList.add('controls-mac');
+  const max = $('#wc-max');
+  $('#wc-close').onclick = () => api.windowControl('close');
+  $('#wc-min').onclick = () => api.windowControl('minimize');
+  max.onclick = () => api.windowControl('maximize');
+  api.onMaximizeChange(maximized => {
+    max.firstElementChild!.className = `codicon codicon-chrome-${maximized ? 'restore' : 'maximize'}`;
+    max.title = max.ariaLabel = maximized ? 'Restaurar' : 'Maximizar';
+  });
+}
+
 // Live switch of every themed surface: CSS variables, Monaco and the terminals. (The window's native title bar overlay is the main process's.)
 function applyTheme() {
   document.documentElement.dataset.theme = Features.get<string>('workbench.theme') === 'claro' ? 'light' : 'dark';
   monaco.editor.setTheme(document.documentElement.dataset.theme === 'light' ? 'rubaxe-light' : 'rubaxe-dark');
   Terminal.applyTheme();
-  void api.setTitleBarOverlay(...(document.documentElement.dataset.theme === 'light' ? ['#F3F3F3', '#3B3B3B'] : ['#181818', '#CCCCCC']) as [string, string]);
+  if (document.body.classList.contains('controls-mac')) return;
+  const light = document.documentElement.dataset.theme === 'light';
+  // Over acrylic/vibrancy the overlay must be see-through (#rrggbbaa).
+  void api.setTitleBarOverlay(document.documentElement.dataset.material ? '#00000000' : light ? '#F3F3F3' : '#181818', light ? '#3B3B3B' : '#CCCCCC');
 }
 
 function defineTheme() {
@@ -428,6 +449,8 @@ function defineTheme() {
 async function boot() {
   document.body.classList.add(`platform-${api.platform}`);
   Features.load(await api.loadSettings());
+  if ((await api.windowMaterial()) !== 'none') document.documentElement.dataset.material = 'glass';
+  initWindowControls();
   await Ruby.applyRubyBin();
   defineTheme();
   Editor.createEditor(container => Features.render(container, onSettingChange));
@@ -449,7 +472,7 @@ async function boot() {
     ed.setPosition({ lineNumber: hit.cursor[0], column: hit.cursor[1] });
   });
   registerIntentions(id => Features.on(id));
-  initMenubar(MENUS.map(([title, items]): Menu => [title, items.map(menuItem)]));
+  initMenubar(MENUS.map(([title, items]): Menu => [title, items.map(menuItem)]), $('#menu-btn'));
   Panel.initPanel(Ruby.stopAll, Terminal.show);
   initExplorer(() => openFolder());
   initSearch();
@@ -459,6 +482,7 @@ async function boot() {
   Ruby.initInspect();
   Terminal.initTerminal();
   Git.initGit();
+  RightPanel.initRightPanel();
   initStatusBar();
   renderRubyView();
   $('#gems-refresh').onclick = e => { e.stopPropagation(); void Ruby.loadGems($('#gems-body')); };
@@ -474,9 +498,16 @@ async function boot() {
     };
   });
   $('#ab-settings').onclick = () => Editor.openSettings();
+  document.querySelectorAll<HTMLElement>('.ab-item').forEach(el => { el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }; });
   $('#command-center').onclick = () => quickOpen();
-  makeSash($('#sash-side'), e => { $('#sidebar').style.width = `${Math.min(600, Math.max(170, e.clientX - 48))}px`; });
-  makeSash($('#sash-panel'), e => { $('#panel').style.height = `${Math.min(window.innerHeight - 200, Math.max(100, window.innerHeight - 22 - e.clientY))}px`; });
+  $('#folder-btn').onclick = () => openFolder();
+  $('#branch-btn').onclick = () => void Git.switchBranch();
+  Git.onDidRefresh(() => { $('#branch-btn').hidden = !Git.branch; $('#branch-label').textContent = Git.branch; });
+  $('#tb-run').onclick = () => void Ruby.runFile();
+  $('#tb-terminal').onclick = () => togglePanel();
+  $('#tb-settings').onclick = () => Editor.openSettings();
+  makeSash($('#sash-side'), e => { $('#sidebar').style.width = `${Math.min(600, Math.max(170, e.clientX - $('#sidebar').getBoundingClientRect().left - 4))}px`; });
+  makeSash($('#sash-panel'), e => { $('#panel').style.height = `${Math.min(window.innerHeight - 200, Math.max(100, window.innerHeight - 46 - e.clientY))}px`; });
 
   // Capture phase so workbench shortcuts win over Monaco's own bindings.
   window.addEventListener('keydown', e => {

@@ -44,3 +44,11 @@ test('locale keys flatten nested YAML and drop the locale root', () => {
   const yaml = ['en:', '  hello: "Hello"', '  posts:', '    title: Posts', '    # comment: x', '    form:', '      save: "Save"', 'pt-BR:', '  hello: Olá'].join('\n');
   assert.deepStrictEqual(localeKeys(yaml), ['hello', 'posts.title', 'posts.form.save', 'hello']);
 });
+
+test('server port is read from the Puma banner', async () => {
+  const { serverPort, fileKind } = await import('../src/renderer/paths.ts');
+  assert.strictEqual(serverPort('* Listening on http://127.0.0.1:3000\nUse Ctrl-C'), '3000');
+  assert.strictEqual(serverPort('Listening on http://[::1]:4567'), '4567');
+  assert.strictEqual(serverPort('Booting Puma'), '');
+  assert.deepStrictEqual(['a.rb', 'Gemfile', 'x.html.erb', 'Gemfile.lock', 'a.yml', 'README.md', 'a.ts', 'blob'].map(fileKind), ['ruby', 'ruby', 'erb', 'lock', 'yaml', 'md', 'ts', 'file']);
+});
