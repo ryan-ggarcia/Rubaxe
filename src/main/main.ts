@@ -9,7 +9,9 @@ import type { IPty } from 'node-pty';
 import { createParser, frame } from './lsp.ts';
 import { quote } from './shell.ts';
 import { watchIgnored } from './watch.ts';
-import type { SearchHit } from './preload.ts';
+import type { AppUpdater } from 'electron-updater';
+import { isNewer } from './version.ts';
+import type { SearchHit, UpdateStatus } from './preload.ts';
 
 const IGNORED = new Set(['.git', 'node_modules', 'tmp', 'log', '.bundle', 'coverage', '.ruby-lsp', 'vendor']);
 const MAX_FILES = 20000;
@@ -17,7 +19,7 @@ const MAX_HITS = 2000;
 let win: BrowserWindow | undefined;
 let lsp: ChildProcess | null = null;
 let allowClose = false;
-let relaunch = false; // set by the relaunch request, cleared by any other close attempt
+let afterClose: 'quit' | 'relaunch' | 'install' = 'quit'; // set by the relaunch/installUpdate requests, reset by any other close attempt
 let nativeControls = true; // false: window.controls 'mac' on Windows/Linux, the renderer draws the buttons
 // backgroundMaterial needs Windows 11 22H2 (build 22621); vibrancy is macOS-only. Everything else stays solid.
 const material = process.platform === 'darwin' ? 'vibrancy'
@@ -356,7 +358,53 @@ ipcMain.on('windowControl', (_e, action: unknown) => {
   else if (action === 'close') win.close();
 });
 // Same unsaved-tabs confirmation as closing; confirmClose then quits with the relaunch armed.
-ipcMain.on('relaunch', () => { relaunch = true; send('closeRequest'); });
+ipcMain.on('relaunch', () => { afterClose = 'relaunch'; send('closeRequest'); });
+
+// Updates. Windows (NSIS) and Linux (AppImage): electron-updater downloads the GitHub Release and installs on restart.
+// macOS: the build is unsigned and Squirrel.Mac only takes signed updates, so a newer Release is only announced.
+const RELEASES = 'https://github.com/ryan-ggarcia/Rubaxe/';
+let updater: AppUpdater | undefined;
+let updateReady = false;
+let releaseUrl = ''; // macOS: page of the newer Release, already checked to start with RELEASES
+const updateStatus = (s: UpdateStatus) => send('updateStatus', s);
+const shortError = (e: Error) => e.message.split('\n')[0].slice(0, 200);
+
+// Loaded on first check: requiring electron-updater takes ~150 ms, too much to add to startup.
+// require, not import(): Node's ESM view of this CommonJS package misses autoUpdater (a getter export).
+function loadUpdater() {
+  const u: AppUpdater = require('electron-updater').autoUpdater; // autoDownload is on by default
+  u.on('update-available', i => updateStatus({ state: 'available', version: i.version }));
+  u.on('download-progress', p => updateStatus({ state: 'downloading', percent: p.percent }));
+  u.on('update-downloaded', i => { updateReady = true; updateStatus({ state: 'ready', version: i.version }); });
+  u.on('update-not-available', () => updateStatus({ state: 'none' }));
+  u.on('error', e => updateStatus({ state: 'error', message: shortError(e) }));
+  return u;
+}
+
+async function checkForUpdates() {
+  if (process.platform !== 'darwin') {
+    // Check and download failures also arrive as the 'error' event, already reported.
+    const r = await (updater ??= loadUpdater()).checkForUpdates().catch(() => null);
+    return void r?.downloadPromise?.catch(() => {});
+  }
+  try {
+    const r = await fetch('https://api.github.com/repos/ryan-ggarcia/Rubaxe/releases/latest', { headers: { 'User-Agent': 'Rubaxe' }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`GitHub respondeu ${r.status}`);
+    const { tag_name, html_url } = await r.json();
+    const version = String(tag_name).replace(/^v/, '');
+    if (!isNewer(version, app.getVersion())) return updateStatus({ state: 'none' });
+    if (typeof html_url !== 'string' || !html_url.startsWith(RELEASES)) throw new Error('endereço do Release inesperado');
+    releaseUrl = html_url;
+    updateStatus({ state: 'manual', version });
+  } catch (e) { updateStatus({ state: 'error', message: shortError(e as Error) }); }
+}
+
+ipcMain.handle('checkForUpdates', () => app.isPackaged ? checkForUpdates() : updateStatus({ state: 'none', message: 'Disponível só no app instalado.' }));
+// No URL from the renderer: main opens only the Release it validated, or installs what it downloaded.
+ipcMain.on('installUpdate', () => {
+  if (releaseUrl) shell.openExternal(releaseUrl);
+  else if (updateReady) { afterClose = 'install'; send('closeRequest'); } // same unsaved-tabs confirmation as closing
+});
 
 app.whenReady().then(async () => {
   // Windows/Linux use the HTML menu bar; macOS needs a native menu or Cmd+C/V/X/A and Cmd+Q stop working.
@@ -390,15 +438,19 @@ app.whenReady().then(async () => {
   win.on('close', e => {
     if (allowClose) return;
     e.preventDefault();
-    relaunch = false;
+    afterClose = 'quit';
     win!.webContents.send('closeRequest');
   });
   win.on('maximize', () => send('maximizeChange', true));
   win.on('unmaximize', () => send('maximizeChange', false));
   win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
+  if (app.isPackaged) {
+    setTimeout(checkForUpdates, 10_000);
+    setInterval(checkForUpdates, 6 * 3600_000);
+  }
 });
 
-ipcMain.handle('confirmClose', () => { if (relaunch) app.relaunch(); allowClose = true; win?.close(); });
+ipcMain.handle('confirmClose', () => { if (afterClose === 'relaunch') app.relaunch(); allowClose = true; win?.close(); });
 
 app.on('window-all-closed', () => {
   stopLsp();
@@ -406,5 +458,7 @@ app.on('window-all-closed', () => {
   ptys.forEach(p => p.kill());
   runs.forEach(kill);
   watcher?.close();
-  app.quit();
+  // quitAndInstall quits by itself; if the installer cannot start it only emits 'error', so quit then.
+  if (afterClose === 'install' && updater) { updater.once('error', () => app.quit()); updater.quitAndInstall(true, true); }
+  else app.quit();
 });

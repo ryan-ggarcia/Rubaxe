@@ -15,6 +15,7 @@ export const onDidRefresh = (fn: () => void) => listeners.push(fn);
 let timer: ReturnType<typeof setTimeout> | undefined;
 const blames = new Map<M.editor.ITextModel, BlameLine[]>();
 let blameIds: string[] = [];
+let selected = ''; // staged:path of the clicked change row, kept across refreshes
 const STATUS: Record<string, string> = {
   M: 'Modificado', A: 'Adicionado', D: 'Excluído', R: 'Renomeado', C: 'Copiado', U: 'Não rastreado', T: 'Tipo alterado',
 };
@@ -69,11 +70,12 @@ export async function refresh() {
       const letter = h('span', { className: 'scm-letter', title: label }, c.status);
       letter.style.color = `var(--git-${c.status}, var(--fg))`;
       const dir = c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : '';
-      const row = h('div', { className: 'tree-row scm-row', title: c.from ? `${c.from} → ${c.path}` : c.path },
+      const key = `${staged}:${c.path}`;
+      const row = h('div', { className: `tree-row scm-row${key === selected ? ' selected' : ''}`, title: c.from ? `${c.from} → ${c.path}` : c.path },
         h('span', { className: 'tree-label' }, basename(c.path)), h('span', { className: 'desc' }, dir),
         action('go-to-file', 'Abrir arquivo', () => Editor.openFile(absOf(c.path))),
         action(staged ? 'remove' : 'add', staged ? 'Remover da área de preparação' : 'Preparar', () => stage([c.path], !staged)), letter);
-      row.onclick = () => void diff(c, staged);
+      row.onclick = () => { selected = key; void diff(c, staged); };
       return row;
     });
     return [h('div', { className: 'section-header scm-section' }, `${title} `, h('span', { className: 'badge' }, String(list.length)), h('span', { className: 'spacer' }), all), ...rows];

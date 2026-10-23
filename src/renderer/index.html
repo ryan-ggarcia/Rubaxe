@@ -25,6 +25,7 @@
       <span class="codicon codicon-search"></span><span id="command-center-label">Pesquisar no projeto...</span>
     </button>
     <div id="titlebar-actions">
+      <button class="tb-update" id="tb-update" hidden></button>
       <button class="tb-btn" id="tb-run" aria-label="Executar arquivo" title="Executar arquivo (Ctrl+F5)"><span class="codicon codicon-play"></span></button>
       <button class="tb-btn" id="tb-terminal" aria-label="Alternar terminal" title="Alternar terminal (Ctrl+J)"><span class="codicon codicon-terminal"></span></button>
       <button class="tb-btn" id="tb-right" aria-label="Alternar painel direito" title="Alternar painel direito (Ctrl+Alt+B)"><span class="codicon codicon-layout-sidebar-right"></span></button>
@@ -112,14 +113,14 @@
           <div class="panel-tab" data-panel="terminal">TERMINAL</div>
           <span class="spacer"></span>
           <span class="terminal-actions" id="terminal-actions" hidden>
-            <select class="input" id="terminal-select" title="Terminais"></select>
-            <span class="codicon codicon-add" id="terminal-new" title="Novo terminal (Ctrl+Shift+`)"></span>
-            <span class="codicon codicon-chevron-down" id="terminal-profiles" title="Perfis de terminal"></span>
-            <span class="codicon codicon-trash" id="terminal-kill" title="Encerrar terminal"></span>
+            <button class="codicon codicon-add" id="terminal-new" title="Novo terminal (Ctrl+Shift+`)" aria-label="Novo terminal"></button>
+            <button class="codicon codicon-chevron-down" id="terminal-profiles" title="Perfis de terminal" aria-label="Novo terminal com perfil" aria-haspopup="listbox"></button>
+            <button class="term-picker" id="terminal-select" title="Terminais" aria-haspopup="listbox"><span class="codicon codicon-terminal"></span><span id="terminal-name"></span><span class="codicon codicon-chevron-down"></span></button>
+            <button class="codicon codicon-trash" id="terminal-kill" title="Encerrar terminal" aria-label="Encerrar terminal"></button>
           </span>
           <span class="codicon codicon-debug-stop disabled" id="panel-stop" title="Parar (Shift+F2)"></span>
           <span class="codicon codicon-clear-all" id="panel-clear" title="Limpar saída"></span>
-          <span class="codicon codicon-close" id="panel-close" title="Fechar painel (Ctrl+J)"></span>
+          <button class="codicon codicon-close" id="panel-close" title="Fechar painel (Ctrl+J)" aria-label="Fechar painel"></button>
         </div>
         <div class="panel-body" id="panel-problems"></div>
         <pre class="panel-body" id="panel-output" hidden></pre>

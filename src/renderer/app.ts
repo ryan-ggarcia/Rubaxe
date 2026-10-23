@@ -18,6 +18,7 @@ import { eventKey, fuzzyScore, isGemfile, relativeTo, usesStandard } from './pat
 import { quickPick, setCloseHandler, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
 import * as Terminal from './terminal.ts';
+import * as Update from './update.ts';
 import * as Tests from './tests.ts';
 import { focusSearch, initSearch } from './search.ts';
 
@@ -103,6 +104,7 @@ const commands: Command[] = [
   { id: 'gems', label: 'Ruby: Recarregar Lista de Gems', icon: 'package', run: () => { showView('ruby'); void Ruby.loadGems($('#gems-body')); } },
   { id: 'codeStyle', label: 'Estilo de Código: Gravar Configuração RuboCop no Projeto', icon: 'symbol-ruler', run: () => Ruby.writeCodeStyle(startLsp) },
   { id: 'steep', label: 'Ruby: Steep Check (tipos RBS)', icon: 'checklist', run: () => Ruby.steepCheck() },
+  { id: 'checkUpdates', label: 'Ajuda: Verificar Atualizações...', icon: 'cloud-download', run: () => Update.check() },
   { id: 'restartLsp', label: 'Ruby: Reiniciar Ruby LSP', icon: 'debug-restart', run: () => startLsp() },
   { id: 'lspLog', label: 'Ruby: Mostrar Log do Ruby LSP', icon: 'output', run: () => { Panel.show('output'); Panel.append(lspLog.join('')); } },
 ];
@@ -154,7 +156,7 @@ const MENUS: [string, Entry[]][] = [
   ['Ir', ['quickOpen', 'workspaceSymbol', act('Ir para Linha...', 'editor.action.gotoLine', 'Ctrl+G'), null, 'gotoTest', 'railsRelated']],
   ['Executar', ['rspecFolder', 'debugStart', 'debugStop', null, 'runFile', 'runTests', 'runTestLine', 'runAllTests', 'stop', null, 'stepOver', 'stepInto', 'stepOut', 'toggleBreakpoint']],
   ['Terminal', ['terminalNew', 'terminalProfile', 'terminalDefault', 'terminal', null, 'irb', 'sendToConsole']],
-  ['Ajuda', ['palette', { label: 'Atalhos', run: () => quickOpen('>') }, { label: 'Sobre o Rubaxe', run: () => notify(`Rubaxe ${pkg.version} — IDE para Ruby`) }]],
+  ['Ajuda', ['palette', 'checkUpdates', { label: 'Atalhos', run: () => quickOpen('>') }, { label: 'Sobre o Rubaxe', run: () => notify(`Rubaxe ${pkg.version} — IDE para Ruby`) }]],
 ];
 
 function menuItem(e: Entry): MenuItem | null {
@@ -481,6 +483,15 @@ async function boot() {
   Rails.initRails();
   Ruby.initInspect();
   Terminal.initTerminal();
+  Update.initUpdate();
+  // Click selects a row in the side lists (the explorer keeps its own selection); the red edge bar follows .selected.
+  document.addEventListener('click', e => {
+    const row = (e.target as Element).closest<HTMLElement>('.tree-row:not(.scm-section), .rp-row');
+    const list = row?.closest('.view-body, .rp-card');
+    if (!row || !list) return;
+    list.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+    row.classList.add('selected');
+  });
   Git.initGit();
   RightPanel.initRightPanel();
   initStatusBar();

@@ -1,11 +1,11 @@
 {
   "name": "rubaxe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "IDE rápida para Ruby: suporte Ruby inspirado no RubyMine, interface no estilo VS Code.",
   "main": "dist/main.js",
   "private": true,
   "scripts": {
-    "build": "esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outdir=dist && esbuild src/renderer/app.ts --bundle --format=iife --outfile=dist/renderer.js",
+    "build": "esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --external:electron-updater --outdir=dist && esbuild src/renderer/app.ts --bundle --format=iife --outfile=dist/renderer.js",
     "typecheck": "tsc",
     "start": "npm run build && electron .",
     "test": "node --test \"test/**/*.test.ts\"",
@@ -16,6 +16,7 @@
     "@vscode/codicons": "0.0.45",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "electron-updater": "6.8.10",
     "monaco-editor": "0.57.0",
     "node-pty": "1.1.0"
   },
@@ -30,6 +31,11 @@
     "appId": "dev.rubaxe.ide",
     "productName": "Rubaxe",
     "icon": "assets/icon.png",
+    "publish": {
+      "provider": "github",
+      "owner": "ryan-ggarcia",
+      "repo": "Rubaxe"
+    },
     "directories": {
       "output": "release"
     },

@@ -2,7 +2,7 @@
 name: frontend
 description: Interface do Rubaxe (processo renderer). Use para qualquer mudança em src/renderer/ — layout no estilo VS Code, editor Monaco, abas, explorer, busca, paleta de comandos, painel, barra de status, tela de configurações, registro de funcionalidades e os providers do Ruby LSP no editor.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: opus
 ---
 
 Você é o engenheiro de front-end do Rubaxe, uma IDE para Ruby em TypeScript + Electron: suporte Ruby inspirado no RubyMine, interface no estilo VS Code.

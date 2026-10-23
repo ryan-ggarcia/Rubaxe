@@ -10,6 +10,7 @@ import * as Terminal from './terminal.ts';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let token = 0;
 let syncing = false;
+let selected = ''; // path of the clicked file row, kept across redraws
 
 export const schedule = () => { clearTimeout(timer); timer = setTimeout(() => void render(), 120); };
 
@@ -32,8 +33,8 @@ async function render() {
     cards.push(card('Arquivos Rails relacionados', ...(groups.length ? groups.flatMap(([group, files]) => [
       h('div', { className: 'rp-group' }, group),
       ...files.map(f => {
-        const row = h('button', { className: 'rp-row', title: f.path }, fileSvg(f.name), h('span', { className: 'tree-label' }, f.name));
-        row.onclick = () => void Editor.openFile(f.path);
+        const row = h('button', { className: `rp-row${f.path === selected ? ' selected' : ''}`, title: f.path }, fileSvg(f.name), h('span', { className: 'tree-label' }, f.name));
+        row.onclick = () => { selected = f.path; void Editor.openFile(f.path); };
         return row;
       }),
     ]) : [h('div', { className: 'rp-muted' }, 'Abra um model, controller ou view para ver os arquivos relacionados.')])));

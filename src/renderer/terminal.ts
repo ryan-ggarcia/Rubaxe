@@ -41,11 +41,12 @@ export const touch = (t: Term) => listeners.forEach(fn => fn(t));
 let active: Term | undefined;
 let seq = 0;
 
+const label = (t: Term) => `${terms.indexOf(t) + 1}: ${t.title}${t.alive ? '' : ' (encerrado)'}`; // numbered: several shells share a name
+
 function select(t: Term | undefined) {
   active = t;
   for (const x of terms) x.el.hidden = x !== t;
-  const pick = $('#terminal-select') as HTMLSelectElement;
-  pick.replaceChildren(...terms.map(x => h('option', { value: x.id, selected: x === t }, `${x.title}${x.alive ? '' : ' (encerrado)'}`)));
+  $('#terminal-name').textContent = t ? label(t) : '';
   if (t) { t.xterm.focus(); requestAnimationFrame(() => t.fit.fit()); } // focus now: rAF is throttled while the window is not visible
 }
 
@@ -127,8 +128,7 @@ export async function sendSelection(openConsole: () => Promise<Term | undefined>
 }
 
 export function initTerminal() {
-  const pick = $('#terminal-select') as HTMLSelectElement;
-  pick.onchange = () => select(terms.find(t => t.id === pick.value));
+  $('#terminal-select').onclick = () => quickPick({ placeholder: 'Selecionar terminal', items: q => terms.filter(t => label(t).toLowerCase().includes(q.toLowerCase())).map(t => ({ label: label(t), icon: t === active ? 'check' : 'terminal', run: () => select(t) })) });
   $('#terminal-new').onclick = () => void create();
   $('#terminal-profiles').onclick = () => void pickProfile('Novo terminal com o perfil...', p => void create(p.name, undefined, false, p));
   $('#terminal-kill').onclick = () => kill();

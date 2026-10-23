@@ -38,10 +38,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: rubaxe-${{ runner.os }}
+          # latest*.yml and the blockmaps: the in-app updater looks the new version up in them on the Release.
           path: |
             release/*.AppImage
             release/*.dmg
             release/*.exe
+            release/latest*.yml
+            release/*.blockmap
           if-no-files-found: error
 
   release:

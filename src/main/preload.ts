@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 export interface DirEntry { name: string; path: string; dir: boolean }
 export interface SearchHit { file: string; line: number; col: number; len: number; text: string }
 export interface ExecResult { code: number | null; out: string }
+// ready: installUpdate restarts into it; manual (macOS): installUpdate opens the Release page.
+export interface UpdateStatus { state: 'available' | 'downloading' | 'ready' | 'manual' | 'error' | 'none'; version?: string; percent?: number; message?: string }
 
 const invoke = <R, A extends unknown[] = []>(ch: string) => (...args: A) => ipcRenderer.invoke(ch, ...args) as Promise<R>;
 const on = <A extends unknown[]>(ch: string) => (cb: (...args: A) => void) => { ipcRenderer.on(ch, (_e, ...args) => cb(...(args as A))); };
@@ -63,6 +65,9 @@ const api = {
   windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.send('windowControl', action), // maximize toggles restore
   relaunch: () => ipcRenderer.send('relaunch'), // goes through onCloseRequest/confirmClose like a normal close
   onMaximizeChange: on<[maximized: boolean]>('maximizeChange'),
+  onUpdateStatus: on<[status: UpdateStatus]>('updateStatus'),
+  installUpdate: () => ipcRenderer.send('installUpdate'), // 'ready' goes through onCloseRequest/confirmClose like relaunch
+  checkForUpdates: invoke<void>('checkForUpdates'), // resolves when the check ends; the result arrives via onUpdateStatus
 };
 
 export type RubaxeApi = typeof api;
