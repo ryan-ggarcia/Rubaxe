@@ -113,7 +113,7 @@ async function askRemote() {
   const link = await prompt('Link do repositório remoto (https://github.com/usuario/projeto.git ou git@github.com:usuario/projeto.git)');
   if (!link) return;
   if (isRemoteUrl(link)) return link;
-  notify('Link inválido. Use https://, ssh://, git:// ou usuario@host:caminho, sem espaços nem aspas.', 'error');
+  notify('Link inválido. Use https://, ssh://, git://, file:///, usuario@host:caminho ou um caminho absoluto (C:\\… ou /…), sem espaços nem aspas.', 'error');
 }
 
 async function clone() {
@@ -121,8 +121,10 @@ async function clone() {
   const parent = link && await api.openFolder();
   if (!parent) return;
   notify(`Clonando ${link}…`);
+  Panel.append(`> git clone ${link}\n`);
+  Panel.show('output');
   const r = await api.exec('git', ['clone', link], parent);
-  Panel.append(`> git clone ${link}\n${r.out}\n`);
+  Panel.append(`${r.out}\n`);
   if (r.code !== 0) { Panel.show('output'); return notify('git clone falhou. A saída está no painel Saída.', 'error'); }
   const dir = parent + ws.sep + cloneDir(link);
   notify(`Repositório clonado em ${dir}.`, 'success');

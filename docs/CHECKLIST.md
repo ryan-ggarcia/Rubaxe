@@ -244,7 +244,7 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 - [ ] Imagens da web (`https://…`) viram um marcador com o nome: o CSP (`img-src 'self' data:`) bloqueia. Caminho sugerido: IPC no main `readImage(url): Promise<string>` que baixa e devolve uma data URL, mantendo o CSP fechado.
 - [ ] Imagens de um projeto aberto por caminho de rede (`\servidor\pasta`) não aparecem: o main bloqueia todo `file:` UNC para não vazar credencial NTLM. Unidades mapeadas (`Y:`) funcionam.
 - [ ] Vídeo, áudio, SVG inline e imagens `data:` dentro do `.md` não são exibidos (removidos pela sanitização).
-- [ ] Com muitas abas abertas, o botão de prévia (fixo à direita da barra de abas) cobre o fim da última aba.
+- [ ] Com muitas abas abertas, o botão de prévia (fixo à direita da barra de abas) cobre o fim da última aba. Não se reproduziu com 19 abas em 23/10/2026: com a barra rolada até o fim, o botão (1080–1102 px) fica depois da última aba (1078 px). Fica aberto até ser conferido com outros tamanhos de janela e nomes de aba.
 - [ ] No tema claro, as checkboxes de tarefa usam o visual padrão do Chromium (apagadas).
 
 ## 10. Validação parcial: Git estilo VS Code, toasts e seleção múltipla (23/10/2026, interrompida)
@@ -272,11 +272,39 @@ Rodada E2E encerrada a pedido do usuário antes do fim. App com `--user-data-dir
 - Regressão: Ctrl+J, auto save, `end` automático, breakpoint/F5, Git no painel direito.
 
 **Bugs encontrados (a corrigir)**
-- [ ] Push/Conectar recusam qualquer repositório local (`C:\…\repo.git`, `C:/…`, `file:///…`), porque `isRemoteUrl` (`src/renderer/paths.ts`) só aceita `http(s)://`, `ssh://`, `git://` e `usuario@host:caminho`.
-- [ ] A saída do `git clone` vai para o painel Saída, mas o painel só abre sozinho em caso de erro (`src/renderer/git.ts`, `clone`).
+- [x] Push/Conectar recusam qualquer repositório local (`C:\…\repo.git`, `C:/…`, `file:///…`), porque `isRemoteUrl` (`src/renderer/paths.ts`) só aceita `http(s)://`, `ssh://`, `git://` e `usuario@host:caminho`. Corrigido e conferido no app (ver "Fechamento").
+- [x] A saída do `git clone` vai para o painel Saída, mas o painel só abre sozinho em caso de erro (`src/renderer/git.ts`, `clone`). Corrigido e conferido no app.
+- [x] `file://host/repo` é aceito por `isRemoteUrl`, e o git no Windows o abre como caminho UNC (`git upload-pack //host/repo`, visto com `GIT_TRACE`; `file://localhost/C$/…` clonou via SMB). Isso pode mandar a credencial NTLM para o host, e `\\servidor\pasta` é recusado. Corrigido: agora só passa `file:///` (ver "Fechamento, 3ª rodada").
+- [x] Clonar pelo `.git` de um repositório (`C:\…\proj\.git`): o git cria `proj`, mas `cloneDir` devolve `''`. O app diz "clonado em `<pasta>\.`" e, no OK, abre a pasta-mãe (`src/renderer/paths.ts`, `cloneDir`). Corrigido e conferido no app.
+- [x] Prévia de Markdown: `<input>` solto (de um `<form>` removido) continua como caixa de texto editável; DOMPurify só tira o `<form>`. Risco baixo (nada é enviado), mas permite um campo falso na prévia (`src/renderer/markdown.ts`, `PURIFY`). Corrigido e conferido no app.
+- [x] Prévia de Markdown: `contenteditable` (HTML colado no `.md`) deixava editar o texto da prévia (`src/renderer/markdown.ts`, `PURIFY`). Corrigido e conferido no app.
 
-**Não testado nesta rodada**
-- [ ] Conteúdo renderizado da prévia de Markdown (a aba abriu, o conteúdo não foi conferido).
-- [ ] 15+ abas sem estourar o layout.
-- [ ] Clean room (`tools/cleanroom_check.py`).
-- [ ] Cmd+clique no macOS; material glass com toasts.
+**Fechamento (23/10/2026, 2ª rodada)**
+App de desenvolvimento com `--user-data-dir` isolado. O `userData` do processo foi conferido pelo main. O `settings.json` real mudou às 18:30, mas a mudança veio do Rubaxe instalado que o usuário tinha aberto: o `lastFolder` aponta para `Downloads\test`, não para uma pasta do teste. typecheck ok, 61/61 testes, build ok. O diálogo de pasta foi respondido por um patch no `dialog.showOpenDialog` do main; o `confirm` foi respondido pela CDP.
+- [x] Clone de repo bare local com `C:\…\r.git`, `C:/…/r.git` e `file:///C:/…/r.git`: a Saída já aparece com `> git clone …` antes do git responder, depois mostra a saída do git; "Abrir a pasta clonada?" abre `<pasta>\r`.
+- [x] Conectar numa pasta sem Git com caminho local: `git init` + `remote add origin C:\…\r.git`; `git remote -v` confere.
+- [x] Commit (mensagem com aspas, `&` e `%` preservados) + Push: `git push -u origin master` e a branch chega no bare. Push sem remote com `C:/…/r2.git`: pede o link, conecta e faz o push de `main`.
+- [x] Clone de caminho inexistente: Saída aberta com o `fatal:` do git e a notificação "git clone falhou".
+- [x] Recusas na tela (Clonar e Conectar): `C:\My Repos\r.git`, `ext::calc`, `-oProxyCommand=calc`, `C:\r.git&calc`, `C:repo` dão "Link inválido…". Nenhum processo é iniciado (spawn do main monitorado) e nenhum diálogo de pasta abre.
+- [x] Prévia de Markdown renderizada: h1/h2 com âncora, negrito/itálico/código inline, listas (inclusive aninhada) e numerada, bloco Ruby colorido pelo Monaco e tabela. Link `#âncora` rola até o título, link `app.rb` abre a aba e link `https` chega ao `window.open`. A imagem local carrega (8×8) e as checkboxes aparecem marcada/desmarcada, desabilitadas. Removidos: `<script>`, `onerror`, `javascript:`, `<iframe>`, `<form>`, `style`, `onclick` e `<svg>`; nada executou.
+- [x] 19 abas: uma linha só, rolagem horizontal, editor e janela sem estouro, e a aba ativada pelo explorador entra na área visível. Com a barra rolada até o fim, o botão de prévia (1080–1102 px) fica depois do fim da última aba (1078 px), então o item da seção 9 não se reproduziu.
+- [x] Material glass com toasts (Windows 11 22631, tema escuro): toast `rgba(34,34,34,.8)` com `blur(20px)` e cantos de 14 px. Sobre o acrílico claro, o contraste medido em pixels reais da tela foi 5,97:1. Tema claro com glass: não verificado.
+- [x] Regressão: Ctrl+J, auto save (salvou em ~1 s e a aba deixou de ficar suja), Git no painel direito (branch + "1 alteração"), F9 + F5 (para em `app.rb:2` com `a=2`, `b=3` e a pilha de chamadas) e `end` automático com o Ruby LSP ativo.
+- [ ] Clean room: não verificado. O RubyMine não está instalado nesta máquina (`C:/Program Files/JetBrains` só tem IntelliJ e PyCharm), e o script sai com "no RubyMine strings found". Continua bloqueando o Release.
+- [ ] Cmd+clique no macOS: não verificado (máquina Windows).
+
+**Fechamento (23/10/2026, 3ª rodada)**
+Integridade antes de começar: os 67 arquivos versionados não modificados batem com o índice (`git hash-object`), os 5 modificados não têm bytes nulos, `npm ls` sem pacote inválido ou ausente, nenhum arquivo de `node_modules` com bytes nulos, e Electron 44.5.1 + node-pty carregam. typecheck ok, 61/61 testes, build ok. App de desenvolvimento com `--user-data-dir` isolado (conferido pelo main), diálogo de pasta e `confirm` respondidos como na 2ª rodada.
+- [x] Testes de unidade: `file:///C:/repo` e `file:///home/u/repo.git` aceitos; `file://host/repo`, `file://localhost/C$/x`, `file:////server/share` e `file://C:/x` recusados; `cloneDir` dá `conn` para `C:\a\conn\.git`, `C:/a/conn/.git/`, `/srv/conn/.git`, `C:\a\conn\.git\` e `file:///home/u/conn/.git`, e os casos de `proj` continuam iguais.
+- [x] Clonar colando `C:\…\conn\.git`: o git cria `conn`, a notificação e o confirm dizem "clonado em `<pasta>\conn`", e o OK abre `<pasta>\conn` (título "conn — Rubaxe"). Com Cancelar, a pasta atual continua aberta.
+- [x] Regressão Git: o clone do bare local por `file:///C:/…/r.git` funciona (`<pasta>\r` com o commit). `file://localhost/C$/…`, `file://host/repo`, `file:////server/share` e `file://C:/x` dão "Link inválido. Use https://, ssh://, git://, file:///, …". Nenhum processo é iniciado (spawn do main monitorado), nenhum diálogo de pasta abre, e a pasta de destino continua vazia.
+- [x] Prévia real com `<form action="https://example.com"><input name="q"></form>`, `<button>`, `<textarea>`, `<select><option>`, `<input type="hidden">` e `<input type="text">`: nenhum controle no DOM nem na tela. O texto de dentro de `button`, `textarea` e `option` fica como texto simples (o DOMPurify mantém o conteúdo por padrão).
+- [x] `- [x] feito` e `- [ ] pendente` aparecem marcada e desmarcada, `disabled`. Um clique real do mouse (CDP `Input.dispatchMouseEvent`) não muda nenhuma das duas. `<input type="checkbox">` e `<input type="CHECKBOX" checked>` colados aparecem desabilitados.
+- [x] `<div contenteditable>x</div>`, `contenteditable="true"` e `contenteditable="plaintext-only"`: aparecem como texto, sem o atributo e com `isContentEditable` falso. Depois de um clique real sobre o "x", o foco fica no `body`, e digitar "ABC" + Delete + Enter não muda nada.
+- [ ] Clean room: não verificado. O RubyMine continua ausente nesta máquina e o script sai com "no RubyMine strings found" (código 1). Continua bloqueando o Release.
+- Perfil real: o `settings.json` real mudou às 18:52:33 durante a rodada. Uma instância de desenvolvimento sem `--user-data-dir` abriu `%APPDATA%\rubaxe` (nome do `package.json`, em minúsculas) por cerca de 3 s. O processo do teste usava o perfil isolado. Repetindo todo o fluxo (abrir pasta, clonar, OK/Cancelar, prévia, `saveSettings({})`, fechar) com um retrato do perfil real, nenhum arquivo dele mudou. A mudança não veio deste teste; a origem não foi identificada (outra execução de `electron .` na máquina).
+
+**Ambiente desta máquina (não é bug do Rubaxe)**
+- Os 5 testes `inspect:` com 0xC000012F e o Ruby LSP morrendo vieram do Ruby corrompido antes da reinstalação das 18:40 (arquivos `.rb` com bytes nulos e trechos de outros arquivos; `cgi/escape.rb` dava SyntaxError). Depois da reinstalação: 0 arquivos corrompidos e 5/5 `inspect:`.
+- A mesma corrupção estava em 290 arquivos de `node_modules` (`@electron/get/dist/types.js` impedia o download do Electron) e em `tools/cleanroom_check.py`, que tinha registros do diário USN do NTFS. O `git status` não acusou porque tamanho e data batiam. O script foi restaurado do git; o `npm ci` limpo zerou os arquivos corrompidos, e o próprio npm acusou um tarball corrompido no cache. O Windows registra desligamentos inesperados quase todo dia (evento 6008), o que combina com escrita sem flush.
+- Sem `user.name`/`user.email` globais no git, o commit falha com "unable to auto-detect email address". No teste foi configurado só no repositório.

@@ -219,13 +219,18 @@ export function gitArgs(args: string[]): string[] {
   return read ? ['--no-optional-locks', ...args] : args;
 }
 
-// Remote link typed by the user goes to cmd.exe (shell: true) and quote() leaves % and ! alone: only a plain charset
-// passes, never a leading '-' (git would read an option, also as a host), and only the remote shapes git knows.
+// Repository link typed by the user goes to cmd.exe (shell: true) and quote() leaves % and ! alone: only a plain
+// charset passes, never a leading '-' (git would read an option, also as a host), and only the shapes git knows:
+// http(s)/ssh/git/file URLs, user@host:path, and absolute local paths (C:\ or C:/, /). The drive needs a separator
+// right after the colon, so "C:x" or "host:path" without a user never pass; no shape allows a "xxx::" transport.
+// file: needs three slashes and a word char: file://host or file:////host is a UNC share on Windows (SMB, NTLM).
 export const isRemoteUrl = (url: string) =>
-  /^[\w.@:/~+-]+$/.test(url) && !url.startsWith('-') && /^((https?|ssh|git):\/\/\w|\w[\w.-]*@\w[\w.-]*:.)/.test(url);
+  /^[\w.@:/\\~+-]+$/.test(url) && !url.startsWith('-') &&
+  /^((https?|ssh|git):\/\/\w|file:\/\/\/\w|\w[\w.-]*@\w[\w.-]*:.|[A-Za-z]:[\\/]|\/\w)/.test(url);
 
-// Folder `git clone <url>` creates: last path segment without a trailing / or .git.
-export const cloneDir = (url: string) => url.replace(/\/+$/, '').split(/[/:]/).pop()!.replace(/\.git$/, '');
+// Folder `git clone <url>` creates: last path segment without a trailing separator, a final /.git or .git.
+export const cloneDir = (url: string) =>
+  url.replace(/[/\\]+$/, '').replace(/[/\\]+\.git$/, '').split(/[/\\:]/).pop()!.replace(/\.git$/, '');
 
 // Multi-select acts on the outermost items: a file inside a selected folder goes with the folder.
 export function outermost(paths: string[], sep: string, win: boolean): string[] {

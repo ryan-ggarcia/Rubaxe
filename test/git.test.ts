@@ -26,7 +26,26 @@ test('git blame porcelain reuses commit info for repeated hashes', () => {
 test('remote links: only plain git URLs reach the shell', () => {
   for (const ok of ['https://github.com/a/b.git', 'http://host:8080/a/b', 'ssh://git@github.com/a/b.git', 'git://host/a.git', 'git@github.com:a/b.git', 'https://user@host.com/a/b'])
     assert.ok(isRemoteUrl(ok), ok);
-  for (const bad of ['', 'https://github.com/a b.git', 'https://github.com/"a".git', "git@host:'a'", 'https://host/%PATH%', 'https://host/a!b!', '-uhttps://x/y', '--upload-pack=calc', 'ssh://-oProxyCommand/x', 'git@-oProxy:a', 'file:///C:/repo', 'C:\\repo','host:a/b', 'https://host/a&calc'])
+  for (const bad of ['', 'https://github.com/a b.git', 'https://github.com/"a".git', "git@host:'a'", 'https://host/%PATH%', 'https://host/a!b!', '-uhttps://x/y', '--upload-pack=calc', 'ssh://-oProxyCommand/x', 'git@-oProxy:a', 'host:a/b', 'https://host/a&calc'])
+    assert.ok(!isRemoteUrl(bad), bad);
+});
+
+test('remote links: absolute local repositories pass (drive with \\ or /, POSIX, file:///)', () => {
+  for (const ok of ['file:///C:/repo', 'C:\\repo', 'C:\\Users\\Aluno\\repo.git', 'C:/Users/Aluno/repo.git', 'c:\\repo', 'D:/x/repo', '/home/u/repo.git', 'file:///home/u/repo.git'])
+    assert.ok(isRemoteUrl(ok), ok);
+});
+
+test('remote links: local paths with shell metacharacters, options, transports or no anchor are refused', () => {
+  for (const bad of [
+    'C:\\My Repos\\a.git', '"C:\\repo"', '/tmp/a b', // spaces and quotes
+    'C:\\repo&calc', 'C:/repo|x', 'C:\\%TEMP%\\r', 'C:\\a!b!', 'C:\\repo^x', // cmd.exe metacharacters
+    '-C:/x', '-/x', 'file://-oProxy/x', // git would read an option
+    'ext::calc', 'fd::3', 'C::x', // remote helpers ("<transport>::")
+    'C:repo', 'CC:/repo', // drive-relative, or not a drive
+    '//server/share', '\\\\server\\share\\r', // UNC: Windows would send NTLM credentials to the host
+    'relative/repo', './repo', // relative to whatever folder git runs in
+    'file://host/repo', 'file://localhost/C$/x', 'file:////server/share', 'file://C:/x', // file: without three slashes is a UNC share
+  ])
     assert.ok(!isRemoteUrl(bad), bad);
 });
 
@@ -34,4 +53,9 @@ test('clone folder name follows git', () => {
   assert.strictEqual(cloneDir('https://github.com/a/proj.git'), 'proj');
   assert.strictEqual(cloneDir('git@github.com:a/proj.git'), 'proj');
   assert.strictEqual(cloneDir('https://host/a/proj/'), 'proj');
+  for (const local of ['C:\\a\\proj.git', 'C:\\a\\proj\\', 'C:/a/proj.git/', 'file:///home/u/proj.git'])
+    assert.strictEqual(cloneDir(local), 'proj', local);
+  // A path to the .git folder of a working copy clones into the working copy's name.
+  for (const dotGit of ['C:\\a\\conn\\.git', 'C:/a/conn/.git/', '/srv/conn/.git', 'C:\\a\\conn\\.git\\', 'file:///home/u/conn/.git'])
+    assert.strictEqual(cloneDir(dotGit), 'conn', dotGit);
 });

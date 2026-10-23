@@ -10,8 +10,8 @@ import { fileUrl, headingSlugs, mdTarget } from './paths.ts';
 // user-content- prefix so they never shadow ours (#toasts…).
 const PURIFY = {
   USE_PROFILES: { html: true },
-  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style'],
-  FORBID_ATTR: ['style', 'popover', 'commandfor'],
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style', 'button', 'textarea', 'select', 'option'],
+  FORBID_ATTR: ['style', 'popover', 'commandfor', 'contenteditable'],
   SANITIZE_NAMED_PROPS: true,
 };
 // Nothing fetches by itself: CSP 'self' still lets file://host (a UNC share, which leaks Windows credentials) through.
@@ -19,6 +19,11 @@ const PURIFY = {
 DOMPurify.addHook('afterSanitizeAttributes', node => {
   if (node.tagName === 'IMG') node.setAttribute('data-src', node.getAttribute('src') ?? '');
   for (const attr of ['src', 'srcset', 'poster', 'background']) node.removeAttribute(attr);
+  // No editable fields: only GFM task checkboxes stay, always disabled.
+  if (node.tagName === 'INPUT') {
+    if (node.getAttribute('type')?.toLowerCase() === 'checkbox') node.setAttribute('disabled', '');
+    else node.remove();
+  }
 });
 
 const langId = (name: string) => monaco.languages.getLanguages().find(l => l.id === name || l.aliases?.some(a => a.toLowerCase() === name) || l.extensions?.includes('.' + name))?.id;
