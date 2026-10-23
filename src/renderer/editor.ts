@@ -9,9 +9,10 @@ import { ipcMessage, languageFor } from './paths.ts';
 export interface Tab {
   conflict?: string; // disk text that differs from this dirty tab (outside edit not yet decided on)
   key: string;
-  kind: 'file' | 'settings' | 'diff';
+  kind: 'file' | 'settings' | 'diff' | 'preview';
   title: string;
-  path?: string;
+  path?: string; // preview: the .md file shown
+  scroll?: number; // preview: scroll position when last left
   model?: M.editor.ITextModel;
   saved?: number;
   dirty?: boolean;
@@ -29,6 +30,7 @@ const loadedText = new WeakMap<M.editor.ITextModel, string>();
 const changeListeners: (() => void)[] = [];
 const saveListeners: ((path: string) => void)[] = [];
 let renderSettings: (container: HTMLElement) => void = () => {};
+let renderPreview: (tab: Tab, container: HTMLElement) => void = () => {};
 
 export const onDidChange = (fn: () => void) => changeListeners.push(fn);
 export const onDidSave = (fn: (path: string) => void) => saveListeners.push(fn);
@@ -44,8 +46,9 @@ export function editorOptions(): M.editor.IEditorOptions {
   };
 }
 
-export function createEditor(settingsRenderer: (container: HTMLElement) => void) {
+export function createEditor(settingsRenderer: (container: HTMLElement) => void, previewRenderer: (tab: Tab, container: HTMLElement) => void) {
   renderSettings = settingsRenderer;
+  renderPreview = previewRenderer;
   editor = monaco.editor.create($('#editor'), {
     model: null, theme: 'rubaxe-dark', automaticLayout: true, fixedOverflowWidgets: true,
     fontFamily: "Consolas, 'Courier New', monospace", bracketPairColorization: { enabled: true },
@@ -159,14 +162,28 @@ export function openDiff(key: string, title: string, path: string, original: str
   activate(tab);
 }
 
+export const isMarkdown = (tab = active) => tab?.kind === 'file' && /\.md$/i.test(tab.path ?? '');
+
+// Opens the preview of a .md tab next to it. A tab of its own: the editor group has no split view.
+export function openPreview(tab = active) {
+  if (!Features.on('markdownPreview')) return notify('Esta funcionalidade está desativada em Configurações.');
+  if (!tab || !isMarkdown(tab)) return notify('Abra um arquivo Markdown (.md) para ver a prévia.');
+  const key = `preview:${tab.path}`;
+  let preview = tabs.find(t => t.key === key);
+  if (!preview) tabs.splice(tabs.indexOf(tab) + 1, 0, preview = { key, kind: 'preview', title: `Prévia: ${tab.title}`, path: tab.path });
+  activate(preview);
+}
+
 export function activate(tab: Tab) {
   if (active !== tab) autoSave(active);
   if (active?.model && active.model === editor.getModel()) active.view = editor.saveViewState();
+  if (active?.kind === 'preview') active.scroll = $('#preview-page').scrollTop;
   active = tab;
   const isFile = tab.kind === 'file';
   $('#editor').hidden = !isFile;
   $('#diff-editor').hidden = tab.kind !== 'diff';
   $('#settings-page').hidden = tab.kind !== 'settings';
+  $('#preview-page').hidden = tab.kind !== 'preview';
   $('#welcome').hidden = true;
   if (isFile) {
     editor.setModel(tab.model!);
@@ -174,6 +191,8 @@ export function activate(tab: Tab) {
     editor.focus();
   } else if (tab.diff) {
     diffEditor.setModel(tab.diff);
+  } else if (tab.kind === 'preview') {
+    renderPreview(tab, $('#preview-page'));
   } else {
     renderSettings($('#settings-page'));
   }
@@ -195,7 +214,7 @@ export function closeTab(tab: Tab, discard = false): boolean {
     editor.setModel(null);
     const next = tabs[i] ?? tabs[i - 1];
     if (next) activate(next);
-    else { $('#editor').hidden = true; $('#diff-editor').hidden = true; $('#settings-page').hidden = true; $('#welcome').hidden = false; }
+    else { $('#editor').hidden = true; $('#diff-editor').hidden = true; $('#settings-page').hidden = true; $('#preview-page').hidden = true; $('#welcome').hidden = false; }
   }
   if (tab.diff) {
     if (diffEditor.getModel()?.original === tab.diff.original) diffEditor.setModel(null);
@@ -268,14 +287,16 @@ export async function syncFromDisk(only?: string[]) {
 
 function renderTabs() {
   $('#tabs').hidden = !tabs.length;
+  const preview = h('button', { className: 'tab-action codicon codicon-open-preview', title: 'Abrir prévia (Ctrl+Shift+V)', ariaLabel: 'Abrir prévia' });
+  preview.onclick = () => openPreview();
   $('#tabs').replaceChildren(...tabs.map(t => {
     const close = h('span', { className: 'codicon close codicon-close', title: 'Fechar (Ctrl+W)' });
     close.onclick = e => { e.stopPropagation(); closeTab(t); };
     const el = h('div', { className: 'tab' + (t === active ? ' active' : '') + (t.dirty ? ' dirty' : ''), title: t.path ?? t.title },
-      (t.kind === 'file' ? fileSvg(t.path ?? t.title) : h('span', { className: `codicon codicon-${t.kind === 'settings' ? 'settings-gear' : 'diff'}` })), h('span', { className: 'tab-label' }, t.title), close);
+      (t.kind === 'file' ? fileSvg(t.path ?? t.title) : h('span', { className: `codicon codicon-${{ settings: 'settings-gear', diff: 'diff', preview: 'open-preview' }[t.kind]}` })), h('span', { className: 'tab-label' }, t.title), close);
     el.onclick = () => activate(t);
     el.onauxclick = e => { if (e.button === 1) closeTab(t); };
     return el;
-  }));
+  }), ...(isMarkdown() && Features.on('markdownPreview') ? [preview] : []));
   $('#tabs').querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -114,6 +114,27 @@ test('Rails rename text keeps the HTTP verb and method: :post', () => {
   const plan = railsRenamePlan('app/controllers/posts_controller.rb', ['app/controllers/posts_controller.rb', 'app/views/posts/_post.html.erb', 'app/views/posts/index.html.erb', 'app/models/post.rb'], 'Article', 'articles')!;
   assert.deepStrictEqual(plan.files.map(f => f.to), ['app/models/article.rb', 'app/controllers/articles_controller.rb', 'app/views/posts/_article.html.erb', 'app/views/articles']);
   assert.deepStrictEqual(plan.texts, ['app/controllers/posts_controller.rb', 'app/views/posts/_post.html.erb', 'app/views/posts/index.html.erb']);
+});
+
+test('markdown links and images resolve from the .md folder; unsafe targets do not', () => {
+  const md = 'C:\\proj\\docs\\guide.md';
+  assert.deepStrictEqual(mdTarget('SPEC.md', md, 'C:\\proj'), { path: 'C:\\proj\\docs\\SPEC.md' });
+  assert.deepStrictEqual(mdTarget('../README.md#uso', md, 'C:\\proj'), { path: 'C:\\proj\\README.md' });
+  assert.deepStrictEqual(mdTarget('./assets/my%20icon.png?raw=1', md, 'C:\\proj'), { path: 'C:\\proj\\docs\\assets\\my icon.png' });
+  assert.deepStrictEqual(mdTarget('/assets/logo.png', md, 'C:\\proj'), { path: 'C:\\proj\\assets\\logo.png' });
+  assert.deepStrictEqual(mdTarget('../../../../x.md', md, ''), { path: 'C:\\x.md' });
+  assert.deepStrictEqual(mdTarget('img/a.png', '/home/u/p/README.md', '/home/u/p'), { path: '/home/u/p/img/a.png' });
+  assert.deepStrictEqual(mdTarget('https://rubyinstaller.org', md, ''), { url: 'https://rubyinstaller.org' });
+  assert.deepStrictEqual(mdTarget('#fase-1--interface', md, ''), { anchor: 'fase-1--interface' });
+  for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', '%6Aavascript:alert(1)', 'file:///C:/x.png', 'data:text/html,x', '//evil/share/x.png', '\\\\evil\\share\\x.png', '%5C%5Cevil%5Cx.png', 'C:\\x.png', 'mailto:a@b.c', '%E0%A4%A', ''])
+    assert.strictEqual(mdTarget(bad, md, 'C:\\proj'), undefined, bad);
+  assert.strictEqual(fileUrl('C:\\a b\\c#1.png'), 'file:///C:/a%20b/c%231.png');
+  assert.strictEqual(fileUrl('/home/ç/a?.png'), 'file:///home/%C3%A7/a%3F.png');
+});
+
+test('heading slugs follow GitHub: accents kept, punctuation dropped, repeats numbered', () => {
+  assert.deepStrictEqual(headingSlugs(['Fase 1 — Interface no estilo VS Code ★', 'Instalação pelo código-fonte', 'Uso', 'Uso', 'Uso-1', ' A_b. c? ']),
+    ['fase-1--interface-no-estilo-vs-code-', 'instalação-pelo-código-fonte', 'uso', 'uso-1', 'uso-1-1', 'a_b-c']);
 });
 
 test('parseInspections is defensive', () => {

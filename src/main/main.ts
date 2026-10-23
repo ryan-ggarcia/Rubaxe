@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import type { IPty } from 'node-pty';
 import { createParser, frame } from './lsp.ts';
 import { quote } from './shell.ts';
@@ -427,6 +428,13 @@ app.whenReady().then(async () => {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', e => e.preventDefault());
+  // file://host/... (and ////host, \\host, %5C%5Chost) is a UNC path on Windows: one <img> from a .md or an LSP hover
+  // would send the user's NTLM hash to that SMB server. Only local files load; fileURLToPath throws on the odd forms.
+  win.webContents.session.webRequest.onBeforeRequest((d, cb) => {
+    if (!d.url.startsWith('file:')) return cb({});
+    try { cb({ cancel: fileURLToPath(d.url, { windows: process.platform === 'win32' }).startsWith('\\\\') }); }
+    catch { cb({ cancel: true }); }
+  });
   win.webContents.on('before-input-event', (e, input) => {
     // F12 belongs to Monaco (go to definition); DevTools uses Chromium's Ctrl+Shift+I.
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') {

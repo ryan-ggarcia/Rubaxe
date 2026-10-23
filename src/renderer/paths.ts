@@ -370,3 +370,38 @@ export function fileKind(path: string): FileKind {
 
 // "* Listening on http://127.0.0.1:3000" from Puma's output; '' while the server has not announced a port.
 export const serverPort = (text: string): string => /Listening on (?:https?|tcp|ssl):\/\/(?:\[[^\]]+\]|[^\s:/]+):(\d+)/.exec(text)?.[1] ?? '';
+
+// ---------- Markdown preview ----------
+
+// What a link or image in `md` (absolute path) points to: a web URL, an #anchor, or a local file, relative to the
+// .md's folder (a leading / is the project root). Other schemes (javascript:, file:, data:) and //host or \\host
+// (UNC, which leaks Windows credentials) give undefined.
+export function mdTarget(href: string, md: string, root: string): { url: string } | { anchor: string } | { path: string } | undefined {
+  const decode = (s: string) => { try { return decodeURIComponent(s); } catch { return undefined; } };
+  const t = href.trim();
+  if (/^https?:\/\//i.test(t)) return { url: t };
+  if (t.startsWith('#')) return { anchor: decode(t.slice(1)) ?? t.slice(1) };
+  const rel = decode(t.replace(/[?#][^]*$/, ''))?.replace(/\\/g, '/');
+  if (!rel || /^[a-z][a-z\d+.-]*:/i.test(rel) || rel.startsWith('//')) return undefined;
+  const sep = md.includes('\\') ? '\\' : '/';
+  const parts = (rel.startsWith('/') && root ? root : md.slice(0, Math.max(md.lastIndexOf('/'), md.lastIndexOf('\\')))).split(/[\\/]/);
+  for (const seg of rel.split('/')) {
+    if (seg === '..') { if (parts.length > 1) parts.pop(); } else if (seg && seg !== '.') parts.push(seg);
+  }
+  return { path: parts.join(sep) };
+}
+
+// Absolute path -> file: URL for <img src>; # and ? in a name would otherwise cut the URL.
+export const fileUrl = (path: string) => 'file://' + (path.startsWith('/') ? '' : '/') + encodeURI(path.replace(/\\/g, '/')).replace(/[?#]/g, c => encodeURIComponent(c));
+
+// GitHub-style heading anchors: lowercase, punctuation dropped, spaces to '-', repeats get -1, -2…
+export function headingSlugs(texts: string[]): string[] {
+  const seen = new Map<string, number>();
+  return texts.map(text => {
+    const base = text.trim().toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '').replace(/ /g, '-');
+    let slug = base;
+    while (seen.has(slug)) { const n = seen.get(base)! + 1; seen.set(base, n); slug = `${base}-${n}`; }
+    seen.set(slug, 0);
+    return slug;
+  });
+}

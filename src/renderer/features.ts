@@ -58,6 +58,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
   ]],
   ['Ferramentas', [
     ['git', 'Git: status, diff, stage, commit, blame, branches', 'ok'],
+    ['markdownPreview', 'Prévia de Markdown (Ctrl+Shift+V)', 'ok'],
     ['httpClient', 'Cliente HTTP', 'planned'],
     ['database', 'Ferramentas de banco de dados', 'planned'],
     ['rightPanel', 'Painel direito: arquivos Rails relacionados, servidor e Git (Ctrl+Alt+B)', 'ok'],

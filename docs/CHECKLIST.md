@@ -157,6 +157,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 - [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão)
 - [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status), push/pull/fetch
+- [x] Prévia de Markdown (`Ctrl+Shift+V`, botão na aba do `.md`, menu Exibir): aba própria ao lado do arquivo (o editor não divide a tela), atualiza ao vivo; GFM (tabelas, tarefas, tachado, autolinks), código colorido pelo Monaco, links relativos abrem no Rubaxe, `#âncora` rola, `http(s)` vai para o navegador; HTML passa pelo DOMPurify e nada carrega sozinho (imagens só locais, resolvidas a partir da pasta do `.md`; da web viram um marcador)
 - [x] Redesign: cards flutuantes com cantos arredondados, acrílico/vibrancy (sólido sem material), topo limpo com menu ☰, ícones SVG próprios por tipo de arquivo, painel direito (Rails relacionados, servidor, Git; Ctrl+Alt+B) e botões de janela estilo macOS (`window.controls`)
 - [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
@@ -228,5 +229,17 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 - [ ] Exclusão em OneDrive, pendrive FAT e nas unidades de rede reais (Y:/Z:). Testado só com `subst`.
 - [ ] Risco conhecido, não testado a fundo: um arquivo maior que a capacidade da Lixeira é apagado de vez pelo Windows sem aviso.
 
+**Markdown**
+- [ ] Link `http(s)` da prévia abrindo o navegador de verdade (testado só até o `window.open`; o `setWindowOpenHandler` do main é o mesmo de antes).
+
 **Qualidade**
 - [ ] Rodar o clean room (`tools/cleanroom_check.py`) antes do próximo Release. Última execução com 0 hits: no redesign. Update, ajustes visuais e ícones vieram depois.
+
+## 9. Limites conhecidos (ajustar um dia)
+**Prévia de Markdown**
+- [ ] Não fica lado a lado com o arquivo: o editor não divide a tela. Precisa de divisão de editor (grupos) para "Abrir prévia ao lado".
+- [ ] Imagens da web (`https://…`) viram um marcador com o nome: o CSP (`img-src 'self' data:`) bloqueia. Caminho sugerido: IPC no main `readImage(url): Promise<string>` que baixa e devolve uma data URL, mantendo o CSP fechado.
+- [ ] Imagens de um projeto aberto por caminho de rede (`\servidor\pasta`) não aparecem: o main bloqueia todo `file:` UNC para não vazar credencial NTLM. Unidades mapeadas (`Y:`) funcionam.
+- [ ] Vídeo, áudio, SVG inline e imagens `data:` dentro do `.md` não são exibidos (removidos pela sanitização).
+- [ ] Com muitas abas abertas, o botão de prévia (fixo à direita da barra de abas) cobre o fim da última aba.
+- [ ] No tema claro, as checkboxes de tarefa usam o visual padrão do Chromium (apagadas).

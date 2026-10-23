@@ -9,6 +9,7 @@ import * as Git from './git.ts';
 import * as Hierarchy from './hierarchy.ts';
 import { enterInBraceBlock, registerIntentions } from './intentions.ts';
 import * as Lsp from './lsp-client.ts';
+import * as Markdown from './markdown.ts';
 import { initMenubar, type Menu, type MenuItem } from './menu.ts';
 import pkg from '../../package.json' with { type: 'json' };
 import * as Panel from './panel.ts';
@@ -22,7 +23,8 @@ import * as Update from './update.ts';
 import * as Tests from './tests.ts';
 import { focusSearch, initSearch } from './search.ts';
 
-interface Command { id: string; label: string; key?: string; icon?: string; run: () => unknown }
+// when: the shortcut only applies if it returns true (otherwise the key goes on, e.g. Ctrl+Shift+V pastes as text).
+interface Command { id: string; label: string; key?: string; icon?: string; when?: () => boolean; run: () => unknown }
 
 const lspLog: string[] = [];
 
@@ -43,6 +45,7 @@ const commands: Command[] = [
   { id: 'toggleRightPanel', label: 'Exibir: Alternar Painel Direito', key: 'Ctrl+Alt+B', icon: 'layout-sidebar-right', run: () => RightPanel.toggle() },
   { id: 'problems', label: 'Exibir: Problemas', key: 'Ctrl+Shift+M', icon: 'warning', run: () => Panel.show('problems') },
   { id: 'output', label: 'Exibir: Saída', key: 'Ctrl+Shift+U', icon: 'output', run: () => Panel.show('output') },
+  { id: 'mdPreview', label: 'Markdown: Abrir Prévia', key: 'Ctrl+Shift+V', icon: 'open-preview', when: () => Editor.isMarkdown(), run: () => Editor.openPreview() },
   { id: 'settings', label: 'Preferências: Abrir Configurações', key: 'Ctrl+,', icon: 'settings-gear', run: () => Editor.openSettings() },
   { id: 'runFile', label: 'Ruby: Executar Arquivo', key: 'Ctrl+F5', icon: 'play', run: () => Ruby.runFile() },
   { id: 'runTests', label: 'Ruby: Executar Testes do Arquivo', key: 'Ctrl+Shift+F10', icon: 'beaker', run: () => Ruby.runTests() },
@@ -152,7 +155,7 @@ const MENUS: [string, Entry[]][] = [
     act('Copiar Linha para Cima', 'editor.action.copyLinesUpAction', 'Shift+Alt+↑'), act('Copiar Linha para Baixo', 'editor.action.copyLinesDownAction', 'Shift+Alt+↓'),
     act('Mover Linha para Cima', 'editor.action.moveLinesUpAction', 'Alt+↑'), act('Mover Linha para Baixo', 'editor.action.moveLinesDownAction', 'Alt+↓'), null,
     act('Adicionar Cursor Acima', 'editor.action.insertCursorAbove', 'Ctrl+Alt+↑'), act('Adicionar Cursor Abaixo', 'editor.action.insertCursorBelow', 'Ctrl+Alt+↓'), act('Adicionar Próxima Ocorrência', 'editor.action.addSelectionToNextFindMatch', 'Ctrl+D')]],
-  ['Exibir', ['palette', null, 'explorer', 'search', 'scmView', 'debugView', 'testsView', 'rubyView', null, 'problems', 'output', 'debugConsole', 'terminal', null, 'toggleSidebar', 'toggleRightPanel', 'togglePanel']],
+  ['Exibir', ['palette', null, 'explorer', 'search', 'scmView', 'debugView', 'testsView', 'rubyView', null, 'problems', 'output', 'debugConsole', 'terminal', null, 'toggleSidebar', 'toggleRightPanel', 'togglePanel', null, 'mdPreview']],
   ['Ir', ['quickOpen', 'workspaceSymbol', act('Ir para Linha...', 'editor.action.gotoLine', 'Ctrl+G'), null, 'gotoTest', 'railsRelated']],
   ['Executar', ['rspecFolder', 'debugStart', 'debugStop', null, 'runFile', 'runTests', 'runTestLine', 'runAllTests', 'stop', null, 'stepOver', 'stepInto', 'stepOut', 'toggleBreakpoint']],
   ['Terminal', ['terminalNew', 'terminalProfile', 'terminalDefault', 'terminal', null, 'irb', 'sendToConsole']],
@@ -455,7 +458,8 @@ async function boot() {
   initWindowControls();
   await Ruby.applyRubyBin();
   defineTheme();
-  Editor.createEditor(container => Features.render(container, onSettingChange));
+  Editor.createEditor(container => Features.render(container, onSettingChange), (tab, page) => void Markdown.render(tab, page));
+  Markdown.initPreview();
   applyTheme(); // after createEditor: its theme option would reset the global one
   Lsp.registerProviders();
   // Enter inside a one-line { } block becomes do…end (opt-in); anything else is the normal Enter.
@@ -523,10 +527,10 @@ async function boot() {
   // Capture phase so workbench shortcuts win over Monaco's own bindings.
   window.addEventListener('keydown', e => {
     const k = eventKey(e, api.platform);
-    // In the terminal everything belongs to the shell (readline) except these IDE keys.
-    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c|v)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
+    // In the terminal everything belongs to the shell (readline) except these IDE keys (Ctrl+Shift+V stays the terminal's paste).
+    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
     const cmd = keymap.get(k);
-    if (!cmd) return;
+    if (!cmd || cmd.when?.() === false) return;
     e.preventDefault();
     e.stopPropagation();
     void cmd.run();
