@@ -272,7 +272,7 @@ function renderTabs() {
     const close = h('span', { className: 'codicon close codicon-close', title: 'Fechar (Ctrl+W)' });
     close.onclick = e => { e.stopPropagation(); closeTab(t); };
     const el = h('div', { className: 'tab' + (t === active ? ' active' : '') + (t.dirty ? ' dirty' : ''), title: t.path ?? t.title },
-      (t.kind === 'file' ? fileSvg(t.title) : h('span', { className: `codicon codicon-${t.kind === 'settings' ? 'settings-gear' : 'diff'}` })), h('span', { className: 'tab-label' }, t.title), close);
+      (t.kind === 'file' ? fileSvg(t.path ?? t.title) : h('span', { className: `codicon codicon-${t.kind === 'settings' ? 'settings-gear' : 'diff'}` })), h('span', { className: 'tab-label' }, t.title), close);
     el.onclick = () => activate(t);
     el.onauxclick = e => { if (e.button === 1) closeTab(t); };
     return el;

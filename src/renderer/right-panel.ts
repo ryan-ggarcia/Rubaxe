@@ -33,7 +33,7 @@ async function render() {
     cards.push(card('Arquivos Rails relacionados', ...(groups.length ? groups.flatMap(([group, files]) => [
       h('div', { className: 'rp-group' }, group),
       ...files.map(f => {
-        const row = h('button', { className: `rp-row${f.path === selected ? ' selected' : ''}`, title: f.path }, fileSvg(f.name), h('span', { className: 'tree-label' }, f.name));
+        const row = h('button', { className: `rp-row${f.path === selected ? ' selected' : ''}`, title: f.path }, fileSvg(f.path), h('span', { className: 'tree-label' }, f.name));
         row.onclick = () => { selected = f.path; void Editor.openFile(f.path); };
         return row;
       }),

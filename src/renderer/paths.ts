@@ -345,12 +345,26 @@ export function parseInspections(out: string): Inspection[] {
   }
 }
 
-// Icon family of a file name (explorer and tabs).
-export function fileKind(name: string): 'ruby' | 'erb' | 'yaml' | 'json' | 'lock' | 'md' | 'js' | 'ts' | 'css' | 'html' | 'file' {
+type FileKind = 'ruby' | 'erb' | 'yaml' | 'json' | 'lock' | 'md' | 'js' | 'ts' | 'css' | 'html' | 'file'
+  | 'routes' | 'schema' | 'migration' | 'database' | 'gemfile' | 'gemlock' | 'rake' | 'rack' | 'controller' | 'helper' | 'model';
+// Rails role of a path relative to the project root (first match wins).
+const RAILS_KINDS: [RegExp, FileKind][] = [
+  [/^config\/routes\.rb$/, 'routes'], [/^db\/schema\.rb$/, 'schema'], [/^db\/migrate\/[^/]+\.rb$/, 'migration'], [/^config\/database\.yml$/, 'database'],
+  [/^config\.ru$/, 'rack'], [/^app\/models\/.+\.rb$/, 'model'], [/_controller\.rb$/, 'controller'], [/_helper\.rb$/, 'helper'],
+];
+
+// Icon family of a file (explorer, tabs, right panel); `path` is relative to the project root, or just a name.
+export function fileKind(path: string): FileKind {
+  const rel = path.replace(/\\/g, '/'), name = rel.slice(rel.lastIndexOf('/') + 1);
+  const rails = RAILS_KINDS.find(([re]) => re.test(rel))?.[1];
+  if (rails) return rails;
+  if (name === 'Gemfile') return 'gemfile';
+  if (name === 'Gemfile.lock') return 'gemlock';
+  if (name === 'Rakefile') return 'rake';
   if (/\.html?\.erb$|\.erb$/i.test(name)) return 'erb';
-  if (/\.(rb|rake|gemspec|ru)$|^(Gemfile|Rakefile)$/.test(name)) return 'ruby';
+  if (/\.(rb|rake|gemspec|ru)$/.test(name)) return 'ruby';
   const ext = /\.([^.]+)$/.exec(name)?.[1].toLowerCase();
-  const byExt: Record<string, ReturnType<typeof fileKind>> = { yml: 'yaml', yaml: 'yaml', json: 'json', lock: 'lock', md: 'md', js: 'js', mjs: 'js', ts: 'ts', css: 'css', scss: 'css', html: 'html', htm: 'html' };
+  const byExt: Record<string, FileKind> = { yml: 'yaml', yaml: 'yaml', json: 'json', lock: 'lock', md: 'md', js: 'js', mjs: 'js', ts: 'ts', css: 'css', scss: 'css', html: 'html', htm: 'html' };
   return (ext && byExt[ext]) || 'file';
 }
 

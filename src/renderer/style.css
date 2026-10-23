@@ -23,7 +23,7 @@
   --accent-text: #FF6B63; /* accent readable on dark cards */
   --wc-close: #FF5F57; --wc-min: #FEBC2E; --wc-max: #28C840;
   --folder-back: #3E8FD6; --folder-front: #7DC2F7;
-  --ic-ruby: #E0443C; --ic-ink-soft: #FFB3AE; --ic-ink: #1B1B1B; --ic-erb: #F0714B; --ic-yaml: #C9A0F0; --ic-json: #E6C14F; --ic-lock: #9AA7BA;
+  --ic-ruby: #E0443C; --ic-ruby-top: #FF9A93; --ic-ruby-hi: #F26A61; --ic-ruby-lo: #A8231D; --ic-shine: #FFFFFF; --ic-db: #4EC9B0; --ic-ink: #1B1B1B; --ic-erb: #F0714B; --ic-yaml: #C9A0F0; --ic-json: #E6C14F; --ic-lock: #9AA7BA;
   --ic-md: #7FB3E8; --ic-js: #F0D84A; --ic-ts: #4C94E0; --ic-css: #58A6E8; --ic-html: #F08A4B; --ic-file: #A5ADBA;
   /* Monaco's editor.main.css reads these for widget corners; the standalone build never defines them. */
   --vscode-cornerRadius-small: 3px;
@@ -32,6 +32,15 @@
 }
 
 [hidden] { display: none !important; }
+/* Native scrollbars drawn like Monaco's (14px vertical, 12px horizontal, square thumb, no track or arrows); Monaco and xterm draw their own. */
+:root { --sb-thumb: rgba(121, 121, 121, .4); --sb-thumb-hover: rgba(100, 100, 100, .7); --sb-thumb-active: rgba(191, 191, 191, .4); }
+[data-theme="light"] { --sb-thumb: rgba(100, 100, 100, .4); --sb-thumb-hover: rgba(100, 100, 100, .7); --sb-thumb-active: rgba(0, 0, 0, .6); }
+::-webkit-scrollbar { width: 14px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { background: var(--sb-thumb); }
+::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+::-webkit-scrollbar-thumb:active { background: var(--sb-thumb-active); }
 /* Glass: .8 is the least opacity keeping text at 4.5:1 with a white or a black window behind; popups blur the editor (backdrop-filter never sees the desktop). */
 [data-material="glass"] { --bar: rgba(24, 24, 24, .8); --widget: rgba(34, 34, 34, .8); --chrome: transparent; }
 [data-material="glass"][data-theme="light"] { --bar: rgba(243, 243, 243, .8); --widget: rgba(248, 248, 248, .8); }
@@ -362,7 +371,13 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .ficon .fd-back { fill: var(--folder-back); }
 .ficon .fd-front { fill: var(--folder-front); }
 .ficon .ic-ink { fill: var(--ic-ink); }
-.ficon .ic-ink-soft { stroke: var(--ic-ink-soft); }
+.ficon .ic-ruby-top { fill: var(--ic-ruby-top); }
+.ficon .ic-ruby-hi { fill: var(--ic-ruby-hi); }
+.ficon .s.ic-ruby-hi { fill: none; stroke: var(--ic-ruby-hi); }
+.ficon .ic-ruby-lo { fill: var(--ic-ruby-lo); }
+.ficon .ic-shine { fill: var(--ic-shine); opacity: .85; }
+.ficon .ic-db { fill: var(--ic-db); }
+.ficon .s.ic-db { fill: none; stroke: var(--ic-db); }
 .ficon .ic-ruby { fill: var(--ic-ruby); }
 .ficon .s.ic-ruby { fill: none; stroke: var(--ic-ruby); }
 .ficon .ic-erb { fill: var(--ic-erb); }
@@ -387,7 +402,7 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .ficon .s.ic-file { fill: none; stroke: var(--ic-file); }
 
 /* Light theme additions for the floating-card layout */
-[data-theme="light"] { --term-bg: #F3F3F3; --chrome: #D9DADF; --accent-text: var(--accent); --folder-back: #3A86CC; --folder-front: #8CCBFA; --ic-ink: #FFFFFF; --ic-ruby: #CC342D; --ic-ink-soft: #FFC9C5;
+[data-theme="light"] { --term-bg: #F3F3F3; --chrome: #D9DADF; --accent-text: var(--accent); --folder-back: #3A86CC; --folder-front: #8CCBFA; --ic-ink: #FFFFFF; --ic-ruby: #CC342D; --ic-ruby-top: #F2938C; --ic-ruby-hi: #E0544B; --ic-ruby-lo: #8E1B16; --ic-db: #0F7B6C;
   --ic-erb: #C8501F; --ic-yaml: #7E48B8; --ic-json: #A87B00; --ic-lock: #5F6C80; --ic-md: #2F6FB5; --ic-js: #B79B00; --ic-ts: #2E73C4; --ic-css: #2D7FC9; --ic-html: #C25E17; --ic-file: #6A7280; --focus: #CC342D2E; --ok: #1E7B45; }
 [data-theme="light"][data-material="glass"] { --chrome: transparent; }
 [data-theme="light"] .tb-btn:hover, [data-theme="light"] .tb-chip:hover, [data-theme="light"] .tb-btn.active, [data-theme="light"] .ab-item:hover, [data-theme="light"] .tab:hover { background: #0000001A; }

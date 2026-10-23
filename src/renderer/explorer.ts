@@ -65,7 +65,7 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
     const open = expanded.has(e.path);
     const row = h('div', { className: 'tree-row' + (e.path === selected ? ' selected' : ''), title: e.path },
       h('span', { className: `codicon codicon-${e.dir ? (open ? 'chevron-down' : 'chevron-right') : 'blank'}` }),
-      e.dir ? folderSvg(open) : fileSvg(e.name),
+      e.dir ? folderSvg(open) : fileSvg(e.path),
       h('span', { className: 'tree-label' }, e.name));
     row.style.paddingLeft = `${6 + depth * 14}px`;
     row.setAttribute('role', 'treeitem');

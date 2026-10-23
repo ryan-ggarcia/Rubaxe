@@ -50,5 +50,16 @@ test('server port is read from the Puma banner', async () => {
   assert.strictEqual(serverPort('* Listening on http://127.0.0.1:3000\nUse Ctrl-C'), '3000');
   assert.strictEqual(serverPort('Listening on http://[::1]:4567'), '4567');
   assert.strictEqual(serverPort('Booting Puma'), '');
-  assert.deepStrictEqual(['a.rb', 'Gemfile', 'x.html.erb', 'Gemfile.lock', 'a.yml', 'README.md', 'a.ts', 'blob'].map(fileKind), ['ruby', 'ruby', 'erb', 'lock', 'yaml', 'md', 'ts', 'file']);
+  assert.deepStrictEqual(['a.rb', 'Gemfile', 'x.html.erb', 'Gemfile.lock', 'a.yml', 'README.md', 'a.ts', 'blob'].map(fileKind), ['ruby', 'gemfile', 'erb', 'gemlock', 'yaml', 'md', 'ts', 'file']);
+});
+
+test('Rails files get their icon from the path relative to the root', async () => {
+  const { fileKind } = await import('../src/renderer/paths.ts');
+  const cases: [string, string][] = [
+    ['config/routes.rb', 'routes'], ['config\\routes.rb', 'routes'], ['db/schema.rb', 'schema'], ['db/migrate/20261014094500_create_users.rb', 'migration'],
+    ['config/database.yml', 'database'], ['config.ru', 'rack'], ['Rakefile', 'rake'], ['app/models/concerns/taggable.rb', 'model'],
+    ['app/controllers/users_controller.rb', 'controller'], ['app/helpers/users_helper.rb', 'helper'],
+    ['lib/routes.rb', 'ruby'], ['engine/config/routes.rb', 'ruby'], ['db/migrate/notes.txt', 'file'], ['spec/models/user_spec.rb', 'ruby'], ['app/models/user.html.erb', 'erb'],
+  ];
+  assert.deepStrictEqual(cases.map(([p]) => fileKind(p)), cases.map(([, k]) => k));
 });
