@@ -16,7 +16,8 @@ const api = {
   createPath: invoke<void, [path: string, isDir: boolean]>('createPath'),
   openFileDialog: invoke<string | null>('openFileDialog'),
   renamePath: invoke<void, [from: string, to: string]>('renamePath'),
-  trashPath: invoke<void, [path: string]>('trashPath'),
+  trashPath: invoke<boolean, [path: string]>('trashPath'), // false: no Recycle Bin there; offer deletePath after a confirm
+  deletePath: invoke<void, [path: string]>('deletePath'),
   exists: invoke<boolean, [path: string]>('exists'),
   listFiles: invoke<string[], [root: string]>('listFiles'),
   search: invoke<SearchHit[], [root: string, query: string, opts: { regex: boolean; caseSensitive: boolean }]>('search'),

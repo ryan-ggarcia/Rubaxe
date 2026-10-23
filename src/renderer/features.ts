@@ -25,6 +25,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['diagnostics', 'Diagnósticos em tempo real (sintaxe + RuboCop)', 'ok'],
     ['codeActions', 'Quick-fixes e refatorações (Ctrl+.)', 'ok'],
     ['formatting', 'Formatar documento (Shift+Alt+F)', 'ok'],
+    ['autoEnd', 'Fechar blocos com end ao apertar Enter', 'ok'],
     ['rename', 'Renomear símbolo (F2)', 'ok'],
     ['intentions', 'Ações no código: do↔{}, hash rocket, ternário…', 'ok'],
     ['inspections', 'Inspeções próprias: YARD, nil e aridade', 'ok'],

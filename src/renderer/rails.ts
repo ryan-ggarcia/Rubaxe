@@ -5,7 +5,7 @@ import { pluralize } from './paths.ts';
 import { moveEntry, refreshWorkspace } from './explorer.ts';
 import * as Lsp from './lsp-client.ts';
 import * as Features from './features.ts';
-import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsResource, railsReview, relativeTo, testCandidates, underscore } from './paths.ts';
+import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsRenameText, railsResource, railsReview, relativeTo, testCandidates, underscore } from './paths.ts';
 import { prompt, quickPick, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
 import * as Panel from './panel.ts';
@@ -87,6 +87,12 @@ export async function renameResource() {
   const plan = railsRenamePlan(rel, files, camel, plural);
   if (!plan?.files.length) return notify('Nenhum arquivo do recurso encontrado.');
   const review = railsReview(await api.readFile(abs('config/routes.rb')).catch(() => ''), files, res.singular, res.plural);
+  // Lowercase leftovers (helpers, ivars, params, partials) are rewritten only in the resource's own files.
+  const texts: { file: string; count: number }[] = [];
+  for (const file of plan.texts) {
+    const r = railsRenameText(await api.readFile(abs(file)).catch(() => ''), file.includes('/views/'), res.singular, res.plural, snake, plural);
+    if (r.count) texts.push({ file, count: r.count });
+  }
   const apply = async () => {
     const failed: typeof plan.consts = [];
     for (const c of plan.consts) {
@@ -103,18 +109,24 @@ export async function renameResource() {
       const text = await api.readFile(path).catch(() => undefined);
       if (text !== undefined) await api.writeFile(path, text.replace(new RegExp(`\\b${c.from}\\b`, 'g'), c.to));
     }
+    for (const { file } of texts) {
+      const path = abs(file);
+      const text = await api.readFile(path).catch(() => undefined);
+      if (text !== undefined) await api.writeFile(path, railsRenameText(text, file.includes('/views/'), res.singular, res.plural, snake, plural).text);
+    }
     for (const f of plan.files) if (!await moveEntry(abs(f.from), abs(f.to))) return notify(`Parou em ${f.from}; revise o que já foi renomeado.`, 'error');
     await Editor.syncFromDisk();
     notify(`Recurso renomeado para ${camel}.${failed.length ? ` Sem resposta do Ruby LSP para ${failed.map(c => c.from).join(', ')}: só o arquivo foi ajustado.` : ''} Revise manualmente: tabela, migrations e config/routes.rb.`);
     if (review.length) { Panel.show('output'); Panel.append(`\nRevise manualmente (não alterado):\n${review.map(l => '  ' + l).join('\n')}\n`); }
   };
   quickPick({
-    placeholder: `Renomear ${res.singular} -> ${snake}: ${plan.files.length} arquivos/pastas, ${plan.consts.length} constantes`,
+    placeholder: `Renomear ${res.singular} -> ${snake}: ${plan.files.length} arquivos/pastas, ${plan.consts.length} constantes, ${texts.reduce((n, t) => n + t.count, 0)} substituições`,
     items: () => [
       { label: 'Cancelar', icon: 'close', run: () => {} },
       { label: `Aplicar renomeação (${plan.files.length} arquivos, ${plan.consts.length} constantes)`, icon: 'check', run: () => void apply() },
       ...plan.files.map(f => ({ label: `${f.from}  ->  ${f.to}`, icon: 'file', run: () => {} })),
       ...plan.consts.map(c => ({ label: `${c.from}  ->  ${c.to}`, description: c.file, icon: 'symbol-class', run: () => {} })),
+      ...texts.map(t => ({ label: `${t.file}: ${t.count} substituições`, icon: 'replace', run: () => {} })),
       ...review.map(l => ({ label: l, description: 'revisar manualmente', icon: 'warning', run: () => {} })),
     ],
   });

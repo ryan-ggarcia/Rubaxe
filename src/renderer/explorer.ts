@@ -156,9 +156,19 @@ export async function refreshWorkspace() {
 
 async function deleteEntry(p: string) {
   if (!confirm(`Mover "${basename(p)}" para a lixeira?`)) return;
-  for (const t of tabsUnder(p)) if (!Editor.closeTab(t)) return;
+  const dirty = tabsUnder(p).filter(t => t.dirty);
+  if (dirty.length && !confirm(`${dirty.map(t => `"${t.title}"`).join(', ')} tem alterações não salvas. Excluir e descartar as alterações?`)) return;
   try {
-    await api.trashPath(p);
+    // The Recycle Bin refused (network drive, disabled): permanent delete only on explicit yes; Cancel is the first item.
+    if (!await api.trashPath(p)) {
+      if (!await new Promise<boolean>(done => quickPick({
+        placeholder: `A Lixeira não aceita "${basename(p)}" neste local (unidade de rede ou Lixeira desativada). Excluir definitivamente? Isso não pode ser desfeito.`,
+        items: () => [{ label: 'Cancelar', icon: 'close', run: () => done(false) }, { label: 'Excluir definitivamente', icon: 'trash', run: () => done(true) }],
+        onDismiss: () => done(false),
+      }))) return;
+      await api.deletePath(p);
+    }
+    for (const t of tabsUnder(p)) Editor.closeTab(t, true); // only now: a refused or failed delete keeps unsaved text
   } catch (e) {
     return notify(`Não foi possível excluir ${basename(p)}: ${ipcMessage(e)}`, 'error');
   }

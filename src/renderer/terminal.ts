@@ -61,7 +61,8 @@ export async function create(title?: string, command?: string, isConsole = false
   xterm.loadAddon(fit);
   xterm.open(el);
   const chosen = Features.get<string>('terminal.shell');
-  const p = profile ?? (chosen ? (await api.listShells().catch(() => [])).find(s => s.name === chosen) ?? { name: chosen, path: chosen, args: [] } : undefined);
+  const shells = profile ? [] : await api.listShells().catch(() => []);
+  const p = profile ?? (chosen ? shells.find(s => s.name === chosen) ?? { name: chosen, path: chosen, args: [] } : shells[0]);
   const t: Term = { id: String(++seq), title: title ?? p?.name ?? 'terminal', xterm, fit, el, alive: true, console: isConsole, tail: '' };
   terms.push(t);
   select(t);

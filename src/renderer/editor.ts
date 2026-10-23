@@ -39,6 +39,7 @@ export function editorOptions(): M.editor.IEditorOptions {
     fontSize: Features.get<number>('editor.fontSize'),
     minimap: { enabled: Features.get<boolean>('editor.minimap') },
     wordWrap: Features.get<boolean>('editor.wordWrap') ? 'on' : 'off',
+    formatOnType: true,
   };
 }
 
@@ -184,8 +185,8 @@ function disposeOrphans() {
   for (const m of monaco.editor.getModels()) if (m.uri.scheme === 'file' && !tabFor(m) && m !== editor.getModel()) m.dispose();
 }
 
-export function closeTab(tab: Tab): boolean {
-  if (tab.dirty && !confirm(`"${tab.title}" tem alterações não salvas. Fechar e descartar as alterações?`)) return false;
+export function closeTab(tab: Tab, discard = false): boolean {
+  if (tab.dirty && !discard && !confirm(`"${tab.title}" tem alterações não salvas. Fechar e descartar as alterações?`)) return false;
   const i = tabs.indexOf(tab);
   tabs.splice(i, 1);
   if (active === tab) {

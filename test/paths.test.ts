@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -101,6 +101,19 @@ test('Rails resource rename plan', () => {
   assert.strictEqual(railsRenamePlan('lib/x.rb', files, 'A', 'as'), undefined);
   assert.deepStrictEqual([camelize('blog_post'), underscore('BlogPost'), needsPluralConfirm('article'), needsPluralConfirm('person'), needsPluralConfirm('category')], ['BlogPost', 'blog_post', false, true, false]);
   assert.deepStrictEqual(railsReview('resources :posts\nroot "x"\nget :post_x', files, 'post', 'posts'), ['config/routes.rb:1: resources :posts', 'db/migrate/2024_create_posts.rb']);
+});
+
+test('Rails rename text keeps the HTTP verb and method: :post', () => {
+  const t = (s: string, view = false) => railsRenameText(s, view, 'post', 'posts', 'article', 'articles').text;
+  assert.strictEqual(t('    post posts_url, params: { post: { title: @post.title } }\n'), '    post articles_url, params: { article: { title: @article.title } }\n');
+  assert.strictEqual(t('assert_difference("Post.count")\n  get edit_post_url(@post)\n'), 'assert_difference("Article.count")\n  get edit_article_url(@article)\n');
+  assert.strictEqual(t('  # GET /posts or /posts.json\n  def set_post\n  params.expect(post: [ :title ])\n  redirect_to @post, notice: "Post was created."'), '  # GET /articles or /articles.json\n  def set_article\n  params.expect(article: [ :title ])\n  redirect_to @article, notice: "Article was created."');
+  assert.strictEqual(t('<%= render post %> <%= form_with(model: post, method: :post) %> <form method="post"> <%= link_to "Back to posts", posts_path %>', true),
+    '<%= render article %> <%= form_with(model: article, method: :post) %> <form method="post"> <%= link_to "Back to articles", articles_path %>');
+  assert.strictEqual(railsRenameText('post :create', false, 'post', 'posts', 'article', 'articles').count, 0);
+  const plan = railsRenamePlan('app/controllers/posts_controller.rb', ['app/controllers/posts_controller.rb', 'app/views/posts/_post.html.erb', 'app/views/posts/index.html.erb', 'app/models/post.rb'], 'Article', 'articles')!;
+  assert.deepStrictEqual(plan.files.map(f => f.to), ['app/models/article.rb', 'app/controllers/articles_controller.rb', 'app/views/posts/_article.html.erb', 'app/views/articles']);
+  assert.deepStrictEqual(plan.texts, ['app/controllers/posts_controller.rb', 'app/views/posts/_post.html.erb', 'app/views/posts/index.html.erb']);
 });
 
 test('parseInspections is defensive', () => {

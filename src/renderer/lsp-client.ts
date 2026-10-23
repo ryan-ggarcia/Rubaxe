@@ -54,6 +54,7 @@ export const filesChanged = (changes: (readonly [path: string, type: 1 | 3])[]) 
 };
 // Providers must never throw into Monaco; a failed request just means no result.
 // Non-file documents (e.g. rubaxe-diff:) make ruby-lsp crash trying to read them, so they never reach the server.
+let onType: M.IDisposable | undefined;
 const ask = <T = any>(feature: string, method: string, params: unknown): Promise<T | null> => {
   const uri = (params as { textDocument?: { uri?: string } })?.textDocument?.uri;
   return Features.on(feature) && ready && (uri === undefined || uri.startsWith('file:')) ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
@@ -283,6 +284,31 @@ export async function start(root: string, command: string, h: Hooks) {
   }
   if (mine !== generation) return;
   registerSemanticTokens(init?.capabilities?.semanticTokensProvider?.legend);
+  onType?.dispose();
+  const trig = init?.capabilities?.documentOnTypeFormattingProvider;
+  onType = trig && monaco.languages.registerOnTypeFormattingEditProvider('ruby', {
+    autoFormatTriggerCharacters: [trig.firstTriggerCharacter, ...(trig.moreTriggerCharacter ?? [])].filter(c => c !== '|'),
+    async provideOnTypeFormattingEdits(model, position, ch, options) {
+      const r = await ask<LEdit[]>('autoEnd', 'textDocument/onTypeFormatting', { textDocument: doc(model), position: pos(position), ch, options: { tabSize: options.tabSize, insertSpaces: options.insertSpaces } });
+      // The server only places the cursor ($0) for known clients: indent the empty middle line ourselves once Monaco applied the edits.
+      if (ch === '\n' && r?.length) {
+        // Wait for Monaco to apply the server's edits (a model change before that makes it drop them), then indent.
+        const sub = model.onDidChangeContent(() => {
+          sub.dispose();
+          setTimeout(() => {
+            const ed = monaco.editor.getEditors().find(x => x.getModel() === model);
+            const ln = position.lineNumber;
+            if (!ed || ln < 2 || model.getLineContent(ln).trim()) return;
+            const indent = /^\s*/.exec(model.getLineContent(ln - 1))![0] + (options.insertSpaces ? ' '.repeat(options.tabSize) : '\t');
+            ed.executeEdits('autoEnd', [{ range: new monaco.Range(ln, 1, ln, model.getLineMaxColumn(ln)), text: indent }]);
+            ed.setPosition({ lineNumber: ln, column: indent.length + 1 });
+          }, 0);
+        });
+        setTimeout(() => sub.dispose(), 2000);
+      }
+      return (r ?? []).map(e => ({ range: range(e.range), text: e.newText }));
+    },
+  });
   notify('initialized', {});
   // Windows deadlock: while ruby-lsp's reader thread waits on stdin, a process spawned by another thread (e.g. the
   // ruby-lsp-rails server) blocks in CreateProcess and freezes the server. A message every 500 ms keeps that read

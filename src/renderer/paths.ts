@@ -249,7 +249,8 @@ const simplePlural = (w: string) => /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies
 // Irregular and uncountable words differ from the simple s/es/ies rule: the user confirms the plural for those.
 export const needsPluralConfirm = (snake: string) => pluralize(snake) !== simplePlural(snake);
 
-export interface RenamePlan { files: { from: string; to: string }[]; consts: { from: string; to: string; file: string }[] }
+// `texts`: workspace-relative files (old paths) whose content gets the lowercase renames of railsRenameText.
+export interface RenamePlan { files: { from: string; to: string }[]; consts: { from: string; to: string; file: string }[]; texts: string[] }
 
 // What changes when the resource of `rel` (Post -> Article) is renamed. `files` = workspace-relative '/' paths; only
 // files/folders that exist are listed. Tables, migrations and routes.rb are deliberately not part of the plan.
@@ -277,17 +278,51 @@ export function railsRenamePlan(rel: string, files: string[], newCamel: string, 
     [`spec/helpers/${ns}${op}_helper_spec.rb`, `spec/helpers/${ns}${np}_helper_spec.rb`, []],
     [`spec/system/${ns}${op}_spec.rb`, `spec/system/${ns}${np}_spec.rb`, []],
   );
-  const plan: RenamePlan = { files: [], consts: [] };
+  const plan: RenamePlan = { files: [], consts: [], texts: [] };
   for (const [from, to, consts] of rows) {
     if (!files.includes(from)) continue;
     plan.files.push({ from, to });
+    if (!from.startsWith('app/models/')) plan.texts.push(from);
     for (const [a, b] of consts) plan.consts.push({ from: a, to: b, file: from });
   }
   for (const base of ['app/views', 'spec/views']) {
     const from = `${base}/${ns}${op}`;
-    if (files.some(f => f.startsWith(from + '/'))) plan.files.push({ from, to: `${base}/${ns}${np}` });
+    const inside = files.filter(f => f.startsWith(from + '/'));
+    if (!inside.length) continue;
+    plan.texts.push(...inside);
+    // The partial _post.* is named after the model: rename it inside the old folder, before the folder itself moves.
+    for (const f of inside) {
+      const m = new RegExp(`^${from}/_${os}(\\..+)$`).exec(f);
+      if (m) plan.files.push({ from: f, to: `${from}/_${ns2}${m[1]}` });
+    }
+    plan.files.push({ from, to: `${base}/${ns}${np}` });
   }
   return plan;
+}
+
+// Lowercase names left behind by a resource rename (post -> article), whole words only. Ruby files get the helper/ivar/param
+// forms; views also get the bare local (`render post`). The HTTP verb `post` (tests) and `method: :post` are never touched.
+export function railsRenameText(text: string, view: boolean, os: string, op: string, ns: string, np: string): { text: string; count: number } {
+  let count = 0;
+  const sub = (re: RegExp, to: string) => { text = text.replace(re, (...m) => { count++; return to.replace(/\$(\d)/g, (_, i) => m[+i]); }); };
+  const notMethod = '(?<!method\\s*[=:]\\s*[:"\'])';
+  sub(new RegExp(`\\b((?:new_|edit_)?)${op}_(path|url)\\b`, 'g'), `$1${np}_$2`);
+  sub(new RegExp(`\\b((?:new_|edit_)?)${os}_(path|url)\\b`, 'g'), `$1${ns}_$2`);
+  sub(new RegExp(`@${op}\\b`, 'g'), `@${np}`);
+  sub(new RegExp(`@${os}\\b`, 'g'), `@${ns}`);
+  sub(new RegExp(`\\bset_${os}\\b`, 'g'), `set_${ns}`);
+  sub(new RegExp(`\\b${os}_params\\b`, 'g'), `${ns}_params`);
+  sub(new RegExp(`\\b${op}/${os}\\b`, 'g'), `${np}/${ns}`);
+  sub(new RegExp(`\\b${os}:(?!:)`, 'g'), `${ns}:`);
+  sub(new RegExp(`(?<!method\\s*[=:]\\s*):${os}\\b`, 'g'), `:${ns}`);
+  sub(new RegExp(`\\b${camelize(os)}\\b`, 'g'), camelize(ns));
+  text = text.split('\n').map(l => /^\s*#/.test(l) ? l.replace(new RegExp(`/${op}\\b`, 'g'), () => { count++; return `/${np}`; }) : l).join('\n');
+  if (view) {
+    sub(new RegExp(`${notMethod}\\b${os}\\b`, 'g'), ns);
+    sub(new RegExp(`\\b${op}\\b`, 'g'), np);
+    sub(new RegExp(`\\b${camelize(op)}\\b`, 'g'), camelize(np));
+  }
+  return { text, count };
 }
 
 // Lines of config/routes.rb that mention the resource, and migrations about it: listed for manual review, never edited.

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
 import type { IPty } from 'node-pty';
@@ -76,6 +76,14 @@ const exists = (p: string) => fs.access(p).then(() => true, () => false);
 const pathDirs = () => (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
 const firstExisting = async (ps: string[]) => { for (const p of ps) if (await exists(p)) return p; };
 
+// wsl.exe with no distro turns any key into "install WSL": offer the profile only when -l -q names a distro. Once per session.
+let wslDistro: Promise<boolean> | undefined;
+const hasWslDistro = (wsl: string) => wslDistro ??= new Promise<boolean>(resolve => {
+  // UTF-16LE output; no shell, stdin closed and a 2 s cap so it can never sit at a prompt.
+  execFile(wsl, ['-l', '-q'], { encoding: 'utf16le', timeout: 2000, windowsHide: true }, (err, out) =>
+    resolve(!err && out.replace(/\0/g, '').split(/\r?\n/).some(l => l.trim() !== ''))).stdin?.end();
+});
+
 // Terminal profiles that exist on this machine, default first.
 async function listShells(): Promise<{ name: string; path: string; args: string[] }[]> {
   const out: { name: string; path: string; args: string[] }[] = [];
@@ -92,7 +100,8 @@ async function listShells(): Promise<{ name: string; path: string; args: string[
     // git.exe lives in <Git>\cmd or <Git>\mingw64\bin; bash.exe in <Git>\bin.
     const fromGit = git ? [path.join(git, '..', '..', 'bin', 'bash.exe'), path.join(git, '..', '..', '..', 'bin', 'bash.exe')] : [];
     await add('Git Bash', ['C:\\Program Files\\Git\\bin\\bash.exe', ...fromGit], ['--login', '-i']);
-    await add('WSL', [path.join(sys32, 'wsl.exe')]);
+    const wsl = path.join(sys32, 'wsl.exe');
+    if (await exists(wsl) && await hasWslDistro(wsl)) out.push({ name: 'WSL', path: wsl, args: [] });
     return out;
   }
   const listed = (await fs.readFile('/etc/shells', 'utf8').catch(() => '')).split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
@@ -274,8 +283,20 @@ ipcMain.handle('renamePath', async (_e, from: string, to: string) => {
   if (dst && (dst.ino !== src.ino || dst.dev !== src.dev)) throw new Error(`${path.basename(to)} já existe`);
   await fs.rename(from, to);
 });
-// Trash instead of rm so a mistaken delete can be undone from the OS.
-ipcMain.handle('trashPath', (_e, p: string) => shell.trashItem(p));
+// Trash instead of rm so a mistaken delete can be undone from the OS. false: the Recycle Bin refused it, nothing was touched.
+ipcMain.handle('trashPath', async (_e, p: string) => {
+  try { await shell.trashItem(p); return true; } catch (e) {
+    if (process.platform !== 'win32') throw e;
+    // Windows says "Operation was aborted" for every refusal. Renaming onto itself needs the same delete access, so it
+    // separates "in use" (open in another program, a shell cd'ed inside) from "no Recycle Bin" (network drive, bin off, too big).
+    await fs.rename(p, p).catch((err: NodeJS.ErrnoException) => {
+      throw err.code === 'EBUSY' || err.code === 'EPERM' ? new Error('em uso por outro programa (terminal, servidor...) ou sem permissão') : err;
+    });
+    return shell.trashItem(p).then(() => true, () => false); // retry: the lock may have been brief (antivirus, git)
+  }
+});
+// Permanent: only after the user confirms it, when trashPath returned false.
+ipcMain.handle('deletePath', (_e, p: string) => fs.rm(p, { recursive: true }));
 ipcMain.handle('exists', (_e, p: string) => exists(p));
 ipcMain.handle('listFiles', (_e, root: string) => walk(root));
 ipcMain.handle('search', (_e, root: string, query: string, opts) => search(root, query, opts));

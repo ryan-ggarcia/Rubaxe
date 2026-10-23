@@ -19,7 +19,7 @@ export function fileIcon(name: string): string {
   return 'file';
 }
 
-export const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
+export const basename = (p: string) => p.split(/[\\/]/).pop() || p; // a drive root (Q:\) has an empty last segment
 
 export function $(selector: string): HTMLElement {
   const el = document.querySelector<HTMLElement>(selector);
