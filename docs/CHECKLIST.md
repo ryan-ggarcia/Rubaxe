@@ -182,3 +182,51 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - Inlay hints a partir de assinaturas RBS (tipos de atributo, parâmetro, retorno).
 - Depurador: seguir subprocessos automaticamente.
 - Estilo de código: espaços separados para atribuição/comparação/range e declarações vazias de classe/módulo (o RuboCop não tem cop separado); RuboCop em modo servidor (o Rubaxe só usa o RuboCop via Ruby LSP).
+
+## 7. Próximas funcionalidades (pedidas, ainda não feitas)
+- [ ] **Comando `rubaxe .` no terminal** (como o `code .` do VS Code):
+  - O app aceita pasta ou arquivo na linha de comando: `Rubaxe.exe <pasta>` abre a pasta; `Rubaxe.exe <arquivo>` abre o arquivo.
+  - Instância única: com o Rubaxe já aberto, a mesma janela troca para a pasta nova (perguntando antes se houver aba não salva).
+  - Windows: o instalador (`build/installer.nsh`) cria `rubaxe.cmd` numa pasta própria e a põe no PATH do usuário; o desinstalador remove os dois. Só vale após reinstalar; terminais já abertos precisam ser reabertos.
+  - macOS/Linux: depois, por um comando da paleta ("Instalar comando rubaxe no PATH").
+
+## 8. Testes ainda não executados
+Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app empacotado no Windows 11) até a versão 0.2.2.
+
+**Plataformas**
+- [ ] macOS: o app inteiro, incluindo vibrancy, traffic lights nativos, menu nativo (Cmd+C/V/X/A/Q), atalhos com Option, Cmd+C/V no terminal e update em modo "Baixar vX" (abre a página do Release).
+- [ ] Linux: o app inteiro, incluindo AppImage, terminal (node-pty compilado no build), perfis via `/etc/shells`, watcher recursivo, modo `mac` sem moldura e update do AppImage.
+- [ ] Windows 10: fundo sólido no lugar do acrílico (`windowMaterial` = `none`).
+- [ ] GitHub Actions (`.github/workflows/build.yml`): o workflow nunca rodou (builds Linux/macOS e Release com `latest*.yml` e `.blockmap`).
+
+**Instalador e atualização**
+- [ ] Atualização real pelo botão "Atualizar para vX" a partir de um Release publicado (só foi testada com um Release falso servido localmente). A primeira será a 0.2.1 instalada atualizando para a v0.2.2.
+- [ ] Update sem rede e com o instalador falhando ao iniciar.
+- [ ] Instalador: "Configurar o Ruby agora? → Sim" numa máquina sem Ruby (Windows limpo/VM).
+
+**Terminal e teclado**
+- [ ] Perfil WSL com uma distro instalada (deve aparecer e abrir). Sem distro ele fica oculto, e isso foi testado.
+- [ ] Teclado ABNT físico (Ctrl+' para o terminal, Ctrl+Shift+").
+- [ ] Navegação por Tab com teclado real nos botões do cabeçalho do terminal (só a ordem no DOM foi conferida).
+
+**Ruby, RuboCop e Rails**
+- [ ] Formatar ao salvar (Ctrl+S) com RuboCop no bundle do projeto, e com Standard (`rubocop.standard`, `linters: ['standard']` no Ruby LSP).
+- [ ] Opção `rubocop.config` = `projeto` × `Rubaxe` num projeto real.
+- [ ] Rename Rails: recursos com namespace (`admin/posts`), fixtures (`posts(:one)`, `test/fixtures/posts.yml`) e app com testes de controller reais (`bin/rails test`).
+- [ ] Debug de projeto com Gemfile (`bundle exec`) e de testes Rails.
+- [ ] Bundler "Criar Gem…" respondendo os prompts do `bundle gem` pela linha de entrada da Saída.
+- [ ] Saída do profiler em tempo real (hoje aparece só no fim, de propósito).
+
+**Visual**
+- [ ] Acrílico com a janela sem foco e maximizada.
+- [ ] Contraste medido na tela, após o último ajuste, da pílula da busca (escuro) e dos ícones inativos da activity bar (claro). Hoje só calculado.
+- [ ] Hover e estado ativo do thumb das scrollbars; scrollbars dentro do menu ☰ e de Configurações.
+- [ ] Ícones em 100% de zoom: os selos de controller/helper/model e a gema do `.erb` têm ~7 px.
+- [ ] Barra de seleção do painel direito com um projeto Rails real (após a correção da seleção que sumia).
+
+**Arquivos**
+- [ ] Exclusão em OneDrive, pendrive FAT e nas unidades de rede reais (Y:/Z:). Testado só com `subst`.
+- [ ] Risco conhecido, não testado a fundo: um arquivo maior que a capacidade da Lixeira é apagado de vez pelo Windows sem aviso.
+
+**Qualidade**
+- [ ] Rodar o clean room (`tools/cleanroom_check.py`) antes do próximo Release. Última execução com 0 hits: no redesign. Update, ajustes visuais e ícones vieram depois.
