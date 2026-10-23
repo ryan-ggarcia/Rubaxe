@@ -1,15 +1,24 @@
 // Bottom panel: Problems (Monaco markers) and Output (process output).
-import { $, basename, h } from './dom.ts';
+import { $, api, basename, h } from './dom.ts';
 import * as Editor from './editor.ts';
 
 const MAX_OUTPUT = 200_000; // long-running servers would otherwise grow the DOM forever
 let output = '';
 type Which = 'problems' | 'output' | 'debug' | 'terminal';
+export let current: Which = 'problems';
 
-export function initPanel(onStop: () => void) {
-  document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => { el.onclick = () => show(el.dataset.panel as Which); });
+// onTerminal creates a terminal when none exists (passed in to avoid a panel <-> terminal import cycle).
+export function initPanel(onStop: () => void, onTerminal: () => void) {
+  document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => { el.onclick = () => el.dataset.panel === 'terminal' ? onTerminal() : show(el.dataset.panel as Which); });
   $('#panel-stop').onclick = onStop;
   $('#panel-clear').onclick = () => { output = ''; $('#panel-output').textContent = ''; };
+  const input = $('#output-input') as HTMLInputElement;
+  input.onkeydown = e => {
+    if (e.key !== 'Enter' || !stdinId) return;
+    api.runWrite(stdinId, input.value + '\n');
+    append(input.value + '\n');
+    input.value = '';
+  };
   $('#panel-close').onclick = () => toggle(false);
   monaco.editor.onDidChangeMarkers(refreshProblems);
 }
@@ -20,6 +29,7 @@ export function toggle(visible = $('#panel').hidden) {
 }
 
 export function show(which: Which) {
+  current = which;
   toggle(true);
   document.querySelectorAll<HTMLElement>('.panel-tab').forEach(el => el.classList.toggle('active', el.dataset.panel === which));
   $('#panel-problems').hidden = which !== 'problems';
@@ -27,6 +37,7 @@ export function show(which: Which) {
   $('#panel-debug').hidden = which !== 'debug';
   $('#panel-terminal').hidden = which !== 'terminal';
   $('#terminal-actions').hidden = which !== 'terminal';
+  syncInput();
   $('#panel-stop').hidden = which !== 'output';
   $('#panel-clear').hidden = which !== 'output';
 }
@@ -39,9 +50,16 @@ export function append(text: string) {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
-export function setRunning(running: boolean) {
+let stdinId: string | undefined;
+
+// `stdin` = id of the newest run still alive: its input line shows under the output.
+export function setRunning(running: boolean, stdin?: string) {
   $('#panel-stop').classList.toggle('disabled', !running);
+  stdinId = stdin;
+  syncInput();
 }
+
+const syncInput = () => { $('#output-input').hidden = current !== 'output' || !stdinId; };
 
 export function refreshProblems() {
   const markers = monaco.editor.getModelMarkers({});

@@ -322,6 +322,17 @@ export function initDebug(onStartFile: () => void) {
     const line = e.target.position.lineNumber;
     if (e.event.shiftKey) void conditionalBreakpoint(line); else toggleBreakpoint(line);
   });
+  // Faded breakpoint under the mouse as a click hint (not where one already exists).
+  let hint: string[] = [];
+  const setHint = (line?: number) => { hint = Editor.editor.deltaDecorations(hint, line ? [{ range: new monaco.Range(line, 1, line, 1), options: { glyphMarginClassName: 'codicon codicon-debug-breakpoint bp-hint', glyphMargin: { position: monaco.editor.GlyphMarginLane.Right } } }] : []); };
+  Editor.editor.onMouseMove(e => {
+    const m = Editor.editor.getModel();
+    const line = e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ? e.target.position?.lineNumber : undefined;
+    const taken = line && (bps.get(m?.uri.toString() ?? '') ?? []).some(b => b.line === line);
+    const test = (e.target.element as HTMLElement | null)?.classList.contains('test-glyph');
+    setHint(line && !taken && !test ? line : undefined);
+  });
+  Editor.editor.onMouseLeave(() => setHint());
   Editor.onDidChange(() => { const m = Editor.editor.getModel(); if (m && !decoIds.has(m)) paintBreakpoints(m); });
   monaco.editor.onDidCreateModel(m => m.onDidChangeContent(() => trackLines(m)));
 

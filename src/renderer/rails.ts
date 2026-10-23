@@ -1,11 +1,14 @@
 // Rails: related-file navigation, generators, server and migrations, route helper and i18n key completion.
 import { abs, api, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
-import { refreshWorkspace } from './explorer.ts';
+import { pluralize } from './paths.ts';
+import { moveEntry, refreshWorkspace } from './explorer.ts';
+import * as Lsp from './lsp-client.ts';
 import * as Features from './features.ts';
-import { implCandidates, isTest, localeKeys, parseRoutes, railsRelated, railsResource, relativeTo, testCandidates } from './paths.ts';
+import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsResource, railsReview, relativeTo, testCandidates, underscore } from './paths.ts';
 import { prompt, quickPick, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
+import * as Panel from './panel.ts';
 import * as Terminal from './terminal.ts';
 
 const GENERATORS: [name: string, example: string][] = [
@@ -66,6 +69,57 @@ export async function related() {
   quickPick({ placeholder: 'Ir para arquivo Rails relacionado', items: q => items.filter(i => `${i.label} ${i.description}`.toLowerCase().includes(q.toLowerCase())) });
 }
 
+// Rename Post -> Article across models, controllers, helpers, views and tests. Constants go through the Ruby LSP
+// (so references elsewhere follow); files are moved with the explorer's rename. Tables, migrations and routes are only listed.
+export async function renameResource() {
+  if (!ready('railsRename')) return;
+  const rel = Editor.active?.path && relativeTo(ws.root, Editor.active.path);
+  const res = rel ? railsResource(rel) : undefined;
+  if (!rel || !res) return notify('Abra um model, controller, helper, view ou teste de um recurso Rails.');
+  if (Editor.tabs.some(t => t.dirty)) return notify('Salve os arquivos abertos antes de renomear o recurso.', 'error');
+  const camel = await prompt('Novo nome do recurso, no singular e em CamelCase (ex.: Article)');
+  if (!camel) return;
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(camel)) return notify('Use CamelCase sem espaços ou "::" (ex.: Article, BlogPost).', 'error');
+  const snake = underscore(camel);
+  const plural = needsPluralConfirm(snake) ? await prompt(`"${snake}" tem plural irregular? Confirme o plural`, pluralize(snake)) : pluralize(snake);
+  if (!plural) return;
+  const files = ws.files.map(f => relativeTo(ws.root, f) ?? f);
+  const plan = railsRenamePlan(rel, files, camel, plural);
+  if (!plan?.files.length) return notify('Nenhum arquivo do recurso encontrado.');
+  const review = railsReview(await api.readFile(abs('config/routes.rb')).catch(() => ''), files, res.singular, res.plural);
+  const apply = async () => {
+    const failed: typeof plan.consts = [];
+    for (const c of plan.consts) {
+      const model = await Editor.ensureModel(monaco.Uri.file(abs(c.file)));
+      const at = model?.findMatches(`(?:class|module)\\s+(?:\\w+::)*${c.from}\\b`, false, true, true, null, false)[0];
+      const touched = model && at ? await Lsp.renameSymbol(model, { lineNumber: at.range.endLineNumber, column: at.range.endColumn - c.from.length }, c.to) : undefined;
+      if (!touched) { failed.push(c); continue; }
+      for (const u of touched) { const tab = Editor.tabs.find(t => t.path && monaco.Uri.file(t.path).toString() === u.toString()); if (tab) await Editor.save(tab); }
+      await new Promise(r => setTimeout(r, 300)); // let the server reindex the edited files before the next rename
+    }
+    // shortcut: without a Ruby LSP answer only the renamed file itself is rewritten (whole-word), references elsewhere are not; upgrade by retrying after the LSP is ready.
+    for (const c of failed) {
+      const path = abs(c.file);
+      const text = await api.readFile(path).catch(() => undefined);
+      if (text !== undefined) await api.writeFile(path, text.replace(new RegExp(`\\b${c.from}\\b`, 'g'), c.to));
+    }
+    for (const f of plan.files) if (!await moveEntry(abs(f.from), abs(f.to))) return notify(`Parou em ${f.from}; revise o que já foi renomeado.`, 'error');
+    await Editor.syncFromDisk();
+    notify(`Recurso renomeado para ${camel}.${failed.length ? ` Sem resposta do Ruby LSP para ${failed.map(c => c.from).join(', ')}: só o arquivo foi ajustado.` : ''} Revise manualmente: tabela, migrations e config/routes.rb.`);
+    if (review.length) { Panel.show('output'); Panel.append(`\nRevise manualmente (não alterado):\n${review.map(l => '  ' + l).join('\n')}\n`); }
+  };
+  quickPick({
+    placeholder: `Renomear ${res.singular} -> ${snake}: ${plan.files.length} arquivos/pastas, ${plan.consts.length} constantes`,
+    items: () => [
+      { label: 'Cancelar', icon: 'close', run: () => {} },
+      { label: `Aplicar renomeação (${plan.files.length} arquivos, ${plan.consts.length} constantes)`, icon: 'check', run: () => void apply() },
+      ...plan.files.map(f => ({ label: `${f.from}  ->  ${f.to}`, icon: 'file', run: () => {} })),
+      ...plan.consts.map(c => ({ label: `${c.from}  ->  ${c.to}`, description: c.file, icon: 'symbol-class', run: () => {} })),
+      ...review.map(l => ({ label: l, description: 'revisar manualmente', icon: 'warning', run: () => {} })),
+    ],
+  });
+}
+
 export function generate(destroy = false) {
   if (!ready('railsGenerators')) return;
   quickPick({
@@ -82,11 +136,11 @@ export function generate(destroy = false) {
 }
 
 export const openConsole = () => ready('console') && Terminal.create('rails console', `${ruby()} bin/rails console`, true);
-// Stopping kills the process tree (taskkill /F on Windows), so Puma never removes its pid file; a stale
-// tmp/pids/server.pid would make the next start fail with "A server is already running". Use a fresh one per run.
+// Runs in a terminal: Ctrl+C stops it, while the Output "Stop" (taskkill /F) would leave Puma's pid file behind.
+// A fresh --pid per run avoids "A server is already running" from a stale tmp/pids/server.pid.
 export async function server() {
   if (!ready('railsGenerators')) return;
-  Ruby.runCommand(ruby(), ['bin/rails', 'server', '--pid', `${await api.mkTemp()}${ws.sep}server.pid`]);
+  await Terminal.create('rails server', `${ruby()} bin/rails server --pid "${await api.mkTemp()}${ws.sep}server.pid"`);
 }
 export const db = (task: string) => ready('railsGenerators') && Ruby.runCommand(ruby(), ['bin/rails', `db:${task}`], { onExit: () => { routes = undefined; } });
 

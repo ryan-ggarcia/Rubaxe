@@ -25,7 +25,7 @@ IDE para Ruby com o **suporte à linguagem do RubyMine** e o **layout/estilo do 
 - **Ferramentas:** terminal integrado (PowerShell, IRB, Rails console, enviar seleção), Git (status, diff, stage, commit, blame, branches).
 - **Entrega:** abre em ~0,7 s; instalador Windows com `npm run dist`; logo na tela inicial e ícone da janela/instalador.
 
-Verificação: typecheck limpo, 31 testes unitários, clean room 0 ocorrências (2.238 textos e 4.999 classes do RubyMine conferidos) e ~95 checagens de ponta a ponta no app via CDP, incluindo o app empacotado.
+Verificação: typecheck limpo, 50 testes unitários, clean room 0 ocorrências (2.238 textos e 4.999 classes do RubyMine conferidos) e ~95 checagens de ponta a ponta no app via CDP, incluindo o app empacotado.
 
 ## Bugs encontrados e corrigidos
 

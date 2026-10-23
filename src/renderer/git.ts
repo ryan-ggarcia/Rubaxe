@@ -3,7 +3,7 @@ import type * as M from 'monaco-editor';
 import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import { refreshWorkspace } from './explorer.ts';
-import { parseBlame, parseGitStatus, relativeTo, type BlameLine, type GitChange } from './paths.ts';
+import { gitArgs, parseBlame, parseGitStatus, relativeTo, type BlameLine, type GitChange } from './paths.ts';
 import * as Features from './features.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
@@ -12,9 +12,8 @@ let branch = '';
 let timer: ReturnType<typeof setTimeout> | undefined;
 const blames = new Map<M.editor.ITextModel, BlameLine[]>();
 let blameIds: string[] = [];
-const STATUS: Record<string, [label: string, color: string]> = {
-  M: ['Modificado', '#E2C08D'], A: ['Adicionado', '#81B88B'], D: ['Excluído', '#C74E39'], R: ['Renomeado', '#73C991'],
-  C: ['Copiado', '#73C991'], U: ['Não rastreado', '#73C991'], T: ['Tipo alterado', '#E2C08D'],
+const STATUS: Record<string, string> = {
+  M: 'Modificado', A: 'Adicionado', D: 'Excluído', R: 'Renomeado', C: 'Copiado', U: 'Não rastreado', T: 'Tipo alterado',
 };
 
 // Commands call this first; the Source Control view and refresh handle the disabled state themselves.
@@ -23,12 +22,16 @@ function enabled() {
   return Features.on('git');
 }
 
-const git = (...args: string[]) => api.exec('git', args, top || ws.root);
+const git = (...args: string[]) => api.exec('git', gitArgs(args), top || ws.root);
 const absOf = (p: string) => top + ws.sep + p.split('/').join(ws.sep);
 
 async function gitOk(...args: string[]) {
   const r = await git(...args);
-  if (r.code !== 0) notify(`git ${args[0]}: ${r.out.trim().split('\n').slice(-3).join(' ')}`, 'error');
+  if (r.code !== 0) {
+    const lines = r.out.split('\n').map(l => l.trim()).filter(Boolean);
+    const errs = lines.filter(l => /^(fatal|error):/.test(l));
+    notify(`git ${args[0]}: ${(errs.length ? errs.slice(0, 3) : lines.slice(-3)).join(' ')}`, 'error');
+  }
   return r.code === 0;
 }
 
@@ -39,7 +42,7 @@ export async function refresh() {
     renderStatus();
     return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Git desativado em Configurações.'));
   }
-  const root = await api.exec('git', ['rev-parse', '--show-toplevel'], ws.root);
+  const root = await api.exec('git', gitArgs(['rev-parse', '--show-toplevel']), ws.root);
   top = root.code === 0 ? root.out.trim().replace(/\//g, ws.sep) : '';
   if (!top) {
     branch = '';
@@ -56,9 +59,9 @@ export async function refresh() {
     const action = (name: string, tip: string, run: () => unknown) => { const el = icon(name, tip); el.classList.add('row-action'); el.onclick = e => { e.stopPropagation(); void run(); }; return el; };
     const all = action(staged ? 'remove' : 'add', staged ? 'Remover tudo da área de preparação' : 'Preparar tudo', () => stage(list.map(c => c.path), !staged));
     const rows = list.map(c => {
-      const [label, color] = STATUS[c.status] ?? [c.status, '#CCCCCC'];
+      const label = STATUS[c.status] ?? c.status;
       const letter = h('span', { className: 'scm-letter', title: label }, c.status);
-      letter.style.color = color;
+      letter.style.color = `var(--git-${c.status}, var(--fg))`;
       const dir = c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : '';
       const row = h('div', { className: 'tree-row scm-row', title: c.from ? `${c.from} → ${c.path}` : c.path },
         h('span', { className: 'tree-label' }, basename(c.path)), h('span', { className: 'desc' }, dir),
@@ -118,11 +121,28 @@ export async function switchBranch() {
   };
   quickPick({
     placeholder: `Branch atual: ${branch}. Trocar para…`,
-    items: q => [
-      { label: 'Criar nova branch…', icon: 'add', run: async () => { const name = await prompt('Nome da nova branch'); if (name) await go(['-c', name]); } },
-      ...list.filter(b => b.toLowerCase().includes(q.toLowerCase())).map(b => ({ label: b, icon: b === branch ? 'check' : 'git-branch', description: b === branch ? 'atual' : '', run: () => { if (b !== branch) void go([b]); } })),
-    ],
+    items: q => {
+      const create = { label: 'Criar nova branch…', icon: 'add', run: async () => { const name = await prompt('Nome da nova branch'); if (name) await go(['-c', name]); } };
+      const found = list.filter(b => b.toLowerCase().includes(q.toLowerCase())).map(b => ({ label: b, icon: b === branch ? 'check' : 'git-branch', description: b === branch ? 'atual' : '', run: () => { if (b !== branch) void go([b]); } }));
+      return q && found.length ? [...found, create] : [create, ...found]; // typing a name + Enter switches to it
+    },
   });
+}
+
+// Push/pull/fetch. api.exec has no env option, so GIT_TERMINAL_PROMPT=0 is not set (needs backend support).
+export async function sync(kind: 'push' | 'pull' | 'fetch') {
+  if (!enabled()) return;
+  if (!top) return notify('Esta pasta não é um repositório Git.');
+  const remotes = (await git('remote')).out.split(/\s+/).filter(Boolean);
+  if (!remotes.length) return notify('Nenhum remote configurado. Use: git remote add origin <url>');
+  let args: string[] = [kind];
+  if (kind === 'push' && (await git('rev-parse', '--abbrev-ref', '@{u}')).code !== 0 && remotes.includes('origin')) args = ['push', '-u', 'origin', branch];
+  notify(`git ${kind}…`);
+  if (await gitOk(...args)) {
+    notify(`Git ${kind} concluído.`);
+    if (kind === 'pull') { await Editor.syncFromDisk(); await refreshWorkspace(); }
+  }
+  void refresh();
 }
 
 // ---------- blame ----------
@@ -139,9 +159,10 @@ function paintBlame() {
   const pos = Editor.editor.getPosition();
   const b = lines && pos ? lines[pos.lineNumber - 1] : undefined;
   blameIds = Editor.editor.deltaDecorations(blameIds, !b || !pos ? [] : [{
-    range: new monaco.Range(pos.lineNumber, 1, pos.lineNumber, 1),
+    // End-of-line empty range: Monaco drops collapsed ranges with `after` unless showIfCollapsed.
+    range: new monaco.Range(pos.lineNumber, model!.getLineMaxColumn(pos.lineNumber), pos.lineNumber, model!.getLineMaxColumn(pos.lineNumber)),
     options: {
-      isWholeLine: true,
+      showIfCollapsed: true,
       after: { content: /^0+$/.test(b.hash) ? '   Ainda sem commit' : `   ${b.author}, ${ago(b.time)} • ${b.summary}`, inlineClassName: 'blame-text' },
       hoverMessage: { value: `**${b.summary}**\n\n${b.author} — ${new Date(b.time * 1000).toLocaleString()}\n\n\`${b.hash.slice(0, 8)}\`` },
     },
@@ -175,7 +196,8 @@ function renderStatus() {
 export function initGit() {
   $('#scm-actions').replaceChildren(...[
     icon('check', 'Commit (Ctrl+Enter)'), icon('refresh', 'Atualizar'), icon('git-branch', 'Trocar branch'),
-  ].map((el, i) => { el.onclick = () => void [commit, refresh, switchBranch][i](); return el; }));
+    icon('repo-push', 'Push'), icon('repo-pull', 'Pull'), icon('repo-fetch', 'Fetch'),
+  ].map((el, i) => { el.onclick = () => void [commit, refresh, switchBranch, () => sync('push'), () => sync('pull'), () => sync('fetch')][i](); return el; }));
   ($('#scm-message') as HTMLTextAreaElement).onkeydown = e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); void commit(); } };
   Editor.editor.onDidChangeCursorPosition(() => { if (blames.size) paintBlame(); });
   Editor.onDidChange(() => { if (blames.size) paintBlame(); });

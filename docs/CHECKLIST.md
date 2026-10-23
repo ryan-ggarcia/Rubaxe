@@ -51,12 +51,14 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 ### Fase 1 — Interface no estilo VS Code ★
 - [x] Barra de título customizada com Command Center (clique abre o Quick Open)
-- [x] Activity Bar: Explorer, Busca, Ruby, Configurações
+- [x] Barra de menus (Arquivo, Editar, Seleção, Exibir, Ir, Executar, Terminal, Ajuda) ligada aos comandos existentes
+- [x] Activity Bar: Explorer, Busca, Controle de Código, Executar e Depurar, Testes, Ruby, Configurações
 - [x] Side Bar redimensionável e recolhível (Ctrl+B)
 - [x] Abas de editor: ativa/inativa, indicador de "não salvo", fechar (Ctrl+W)
-- [x] Panel inferior redimensionável (Ctrl+J): Problemas, Saída
+- [x] Panel inferior redimensionável (Ctrl+J abre já com terminal): Problemas, Saída, Console de Depuração, Terminal
 - [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
-- [x] Tema Dark Modern (cores oficiais) também no Monaco
+- [x] Tema escuro e claro (`workbench.theme`) com destaque vermelho Ruby (#CC342D) e cantos arredondados, também no Monaco, xterm e barra de título
+- [x] Auto save: 1 s após a última edição e ao trocar de aba/perder o foco; não formata (só Ctrl+S) e não sobrescreve edição externa (com aba suja + edição externa o auto save fica suspenso; Ctrl+S grava)
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
 
 ### Fase 2 — Arquivos, navegação e busca ★
@@ -101,7 +103,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 ### Fase 5 — Ecossistema Ruby ★
 - [x] Detectar Ruby (`ruby -v`) e comparar com `.ruby-version`
-- [x] Bundler: install, update, outdated, lock, clean
+- [x] Bundler: install, update, outdated, lock, clean, init, pack, criar gem; aviso "Gems faltando" na barra de status
 - [x] Rake: listar tarefas (`rake -AT`) e executar
 
 ### Fase 6 — Configurações ★
@@ -122,7 +124,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 > **Testado no app real** (CDP, 17 checagens) com RSpec e Minitest 6. Sem gems extras: RSpec usa `--format json`; Minitest, cobertura e profiler usam helpers Ruby em `src/ruby/` carregados por `RUBYOPT`.
 
 - [x] Árvore de testes com resultado por exemplo (view "Testes", mensagem da falha abaixo do teste)
-- [x] Reexecutar só os que falharam (RSpec/Rails por `arquivo:linha`, Minitest por nome)
+- [x] Reexecutar só os que falharam (RSpec por id `arquivo[1:2]` ou `arquivo:linha`, Minitest por nome); RSpec por pasta com filtro `-e`; backtrace completo (`rspec.fullBacktrace`)
 - [x] Ícone "executar" na margem ao lado de `describe`/`it`/`def test_`/`test "..."`, com cor do último resultado
 - [x] Cobertura no editor — módulo `Coverage` do Ruby (o mesmo que o SimpleCov usa), barra verde/vermelha na margem e resumo no painel
 - [x] Profiler — por amostragem (sem sobrecarga medível; stackprof no Linux/macOS, thread de amostragem no Windows, onde stackprof/vernier não compilam) e modo "instrumentado, exato" com contagem de chamadas; a lista abre o `def` do método
@@ -132,16 +134,16 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 - [x] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema (Shift+Alt+R; da view vai para a action, do model para o `create_table`)
 - [x] Executar generators (model, controller, scaffold, migration…) e desfazer (`rails destroy`); db:migrate/rollback/seed
-- [x] Rails server (painel Saída) e Rails console (terminal integrado)
+- [x] Rails server (terminal integrado; Ctrl+C para, Shift+F2 não mata) e Rails console (terminal integrado)
 - [x] Completar rotas (`_path`/`_url` de `bin/rails routes`) e chaves i18n (`t('…')` de `config/locales`); views `.erb` com realce HTML
-- [ ] Rename que entende Rails (renomear model/controller/views juntos) — adiado: mexe em muitos arquivos de uma vez; risco alto sem pedido concreto
+- [x] Rename que entende Rails ("Rails: Renomear Recurso..."): model, controller, helper, pasta de views e testes/specs + constantes via Ruby LSP; pré-visualização com confirmação; `routes.rb` e migrations só listados para revisão manual
 
 ### Fase 10 — Recursos avançados do RubyMine
 > **Testado no app real** (16 checagens) + 13 testes unitários das intentions.
 
-- [x] Intentions (Ctrl+.): `{}`↔`do…end`, hash rocket↔`key:`, `if`↔ternário, modificador↔statement, inverter/juntar/dividir `if`, string↔símbolo, interpolação, heredoc squiggly, `_` em números, ordenar hash
+- [x] Intentions (Ctrl+.): parâmetros nomeados↔numerados (`it`/`_1`), mover string para i18n, embutir variável local, juntar ifs em sequência (só com saída de fluxo), `{}`↔`do…end`, hash rocket↔`key:`, `if`↔ternário, modificador↔statement, inverter/juntar/dividir `if`, string↔símbolo, interpolação, heredoc squiggly, `_` em números, ordenar hash
 - [x] Geração (Ctrl+.): `attr_accessor`/`reader`/`writer`, `initialize`, `let` do RSpec
-- [ ] Inspeções extras além do RuboCop (nil, tipos, Rails, RSpec, YARD) — adiado: exigiria inferência de tipos própria; Rails/RSpec já vêm do RuboCop com `rubocop-rails`/`rubocop-rspec` no projeto
+- [x] Inspeções próprias (`src/ruby/rubaxe_inspect.rb`, Prism): YARD (`@param` desconhecido/faltando, `@return` em `initialize`), chamada em nil certo, aridade de métodos do mesmo arquivo. Só regras determinísticas; inferência de tipos completa segue fora
 - [x] Inlay hints e realce semântico (do Ruby LSP; ele só marca o que a gramática não distingue)
 - [x] Hierarquia de tipos (Ruby LSP) e chamadas do método (Shift+Alt+H; montada a partir dos usos, o Ruby LSP não tem call hierarchy)
 - [x] Gerenciadores de versão: seletor de interpretador (rbenv, rvm, asdf, chruby, mise, RubyInstaller, PATH); o escolhido vai na frente do PATH de tudo que o Rubaxe executa
@@ -153,13 +155,13 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 11 — Ferramentas
 > **Testado no app real** (13 checagens): PowerShell no terminal, IRB, Git completo num repositório de teste.
 
-- [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais)
-- [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status)
+- [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão)
+- [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status), push/pull/fetch
 - [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
 
 ### Fase 12 — Qualidade e entrega
-- [x] Testes unitários (`npm test`, 32 testes): convenções de teste, fuzzy, LSP framing, rake, shell (aspas no Windows), relatórios de teste, Rails, Git, intentions, estilo de código
+- [x] Testes unitários (`npm test`, 50 testes): convenções de teste, fuzzy, LSP framing, rake, shell (aspas no Windows), relatórios de teste, Rails, Git, intentions, estilo de código
 - [x] Meta de desempenho — medido: abre em ~0,7 s (0,93 s reabrindo um projeto); digitando num arquivo de 10.007 linhas, mediana 27 ms e pior caso 43 ms por tecla, contando 2 frames de tela
 - [x] Instalador (electron-builder, NSIS) — `npm run dist` gera `release/Rubaxe-Setup-<versão>.exe`; instalação silenciosa, atalhos, app instalado (pasta com espaços e acentos) e desinstalação testados. Sem assinatura de código (não há certificado nesta máquina): o Windows SmartScreen avisa na primeira execução. Linux: o pacote é gerado, mas o node-pty não tem binário pronto para Linux — gere com `npm run dist:linux` numa máquina Linux (compila o terminal). macOS: só em um Mac (exigência da Apple)
 - [x] Atualizar o README com apresentação, instalação pelo instalador e pelo código-fonte
@@ -173,13 +175,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - Marketplace de extensões (reavaliar após o MVP).
 
 ## 6. Adiados (descritos na SPEC, sem pedido concreto ainda)
-- Inspeções próprias além do RuboCop (nil, tipos, YARD) e rename que entende Rails.
+- Inferência de tipos própria (inspeções de tipo além de nil/aridade/YARD).
 - Cliente HTTP e ferramentas de banco de dados.
 - Tipos de execução Cucumber, aplicação Rack e "comando qualquer"; relatório de Test::Unit.
-- RSpec: pasta com filtro de nome, exemplo por ID (`arquivo[1:2]`), backtrace completo.
 - Inlay hints a partir de assinaturas RBS (tipos de atributo, parâmetro, retorno).
 - Depurador: seguir subprocessos automaticamente.
-- Bundler: `pack`, `init`, criar gem e aviso de gem não instalada.
-- Intentions: parâmetros numerados ↔ nomeados, mover string para i18n, embutir variável local, juntar ifs em sequência.
-- Estilo de código: `{}` → `do…end` ao apertar Enter, espaços por tipo de operador, indentar o próprio `private`/`protected`, declarações vazias além de métodos; opções de RuboCop (config do projeto × padrão, modo servidor, Standard).
-- Tema claro.
+- Estilo de código: espaços separados para atribuição/comparação/range e declarações vazias de classe/módulo (o RuboCop não tem cop separado); RuboCop em modo servidor (o Rubaxe só usa o RuboCop via Ruby LSP).

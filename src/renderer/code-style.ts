@@ -1,8 +1,12 @@
+// shortcut: RuboCop has no separate cop per operator type (assignment, comparison share spaceAroundOperators), none for range spacing,
+// and none for empty class/module bodies; only the power operator and default-parameter `=` can be set apart.
 // Code style settings (docs/SPEC.md) -> RuboCop config: the formatter (Ruby LSP + RuboCop) then applies them. Pure, no DOM.
 
 export const STYLE_SETTINGS: [key: string, desc: string, type: 'boolean' | string[], def: string | boolean][] = [
   ['style.preset', 'Preset base.', ['padrão', 'rails-omakase'], 'padrão'],
   ['style.spaceAroundOperators', 'Espaços em volta de operadores e de =>.', 'boolean', true],
+  ['style.spaceAroundPower', 'Espaços em volta do operador de potência: a ** b.', 'boolean', false],
+  ['style.spaceAroundDefaultParam', 'Espaços em volta do = de valores padrão de parâmetros: def f(a = 1).', 'boolean', true],
   ['style.spaceInsideHashBraces', 'Espaços dentro das chaves de hash: { a: 1 }.', 'boolean', true],
   ['style.spaceInsideBlockBraces', 'Espaços dentro das chaves de bloco: { |x| x }.', 'boolean', true],
   ['style.spaceBeforeBlockPipes', 'Espaço entre { e os pipes do bloco.', 'boolean', true],
@@ -12,15 +16,20 @@ export const STYLE_SETTINGS: [key: string, desc: string, type: 'boolean' | strin
   ['style.binaryOperators', 'Expressões binárias quebradas em linhas.', ['nenhum', 'indentado', 'alinhado'], 'alinhado'],
   ['style.methodChains', 'Cadeias de métodos quebradas em linhas.', ['nenhum', 'pelo receptor', 'pelos pontos'], 'pelos pontos'],
   ['style.indentWhen', 'Indentar when dentro de case.', 'boolean', false],
+  ['style.indentPrivate', 'Indentar a própria linha private/protected/public.', 'boolean', true],
   ['style.indentAfterPrivate', 'Indentar os métodos depois de private/protected.', 'boolean', false],
   ['style.emptyMethods', 'Métodos vazios.', ['uma linha', 'várias linhas'], 'uma linha'],
+  // Editor only (no cop): handled by enterInBraceBlock in intentions.ts, not written to the RuboCop file.
+  ['style.braceToDoEndOnEnter', 'Ao apertar Enter dentro de um bloco { } de uma linha, converter em do…end.', 'boolean', false],
 ];
 
 const yes = (v: unknown) => v === true;
 
 export function rubocopStyle(get: (key: string) => unknown): string {
   const cops: Record<string, Record<string, string | boolean>> = {
-    'Layout/SpaceAroundOperators': { Enabled: yes(get('style.spaceAroundOperators')) },
+    'Layout/SpaceAroundOperators': { Enabled: yes(get('style.spaceAroundOperators')), EnforcedStyleForExponentOperator: yes(get('style.spaceAroundPower')) ? 'space' : 'no_space' },
+    'Layout/SpaceAroundEqualsInParameterDefault': { EnforcedStyle: yes(get('style.spaceAroundDefaultParam')) ? 'space' : 'no_space' },
+    'Layout/AccessModifierIndentation': { EnforcedStyle: yes(get('style.indentPrivate')) ? 'indent' : 'outdent' },
     'Layout/SpaceInsideHashLiteralBraces': { EnforcedStyle: yes(get('style.spaceInsideHashBraces')) ? 'space' : 'no_space' },
     'Layout/SpaceInsideBlockBraces': {
       EnforcedStyle: yes(get('style.spaceInsideBlockBraces')) ? 'space' : 'no_space',

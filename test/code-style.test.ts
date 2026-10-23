@@ -19,3 +19,12 @@ test('.rubocop.yml gets inherit_from without losing user rules', () => {
   assert.strictEqual(withInherit('inherit_from: .rubocop_rubaxe.yml\n', '.rubocop_rubaxe.yml'), 'inherit_from: .rubocop_rubaxe.yml\n');
   assert.strictEqual(withInherit('inherit_from: base.yml\n', '.rubocop_rubaxe.yml'), undefined);
 });
+
+test('operator spacing, access modifier indent and editor-only setting', () => {
+  const yml = rubocopStyle(k => ({ ...defaults, 'style.spaceAroundPower': true, 'style.spaceAroundDefaultParam': false, 'style.indentPrivate': false, 'style.braceToDoEndOnEnter': true })[k]);
+  assert.match(yml, /Layout\/SpaceAroundOperators:\n {2}Enabled: true\n {2}EnforcedStyleForExponentOperator: space/);
+  assert.match(yml, /Layout\/SpaceAroundEqualsInParameterDefault:\n {2}EnforcedStyle: no_space/);
+  assert.match(yml, /Layout\/AccessModifierIndentation:\n {2}EnforcedStyle: outdent/);
+  assert.doesNotMatch(yml, /braceToDoEnd/);
+  assert.match(rubocopStyle(k => defaults[k]), /EnforcedStyleForExponentOperator: no_space[\s\S]*AccessModifierIndentation:\n {2}EnforcedStyle: indent\n/);
+});

@@ -11,6 +11,7 @@
 </head>
 <body>
   <header id="titlebar">
+    <div id="menubar" role="menubar"></div>
     <div id="command-center" title="Ir para arquivo (Ctrl+P)">
       <span class="codicon codicon-search"></span><span id="command-center-label">Rubaxe</span>
     </div>
@@ -49,7 +50,7 @@
         <div class="view-body" id="search-results"></div>
       </section>
       <section class="view" id="view-scm" hidden>
-        <div class="view-header"><span>CONTROLE DE CÓDIGO</span><span class="view-actions" id="scm-actions"></span></div>
+        <div class="view-header"><span>GIT</span><span class="view-actions" id="scm-actions"></span></div>
         <div class="scm-commit"><textarea class="input" id="scm-message" rows="3" placeholder="Mensagem do commit (Ctrl+Enter)" spellcheck="false"></textarea></div>
         <div class="view-body" id="scm-body"></div>
       </section>
@@ -96,6 +97,7 @@
           <span class="terminal-actions" id="terminal-actions" hidden>
             <select class="input" id="terminal-select" title="Terminais"></select>
             <span class="codicon codicon-add" id="terminal-new" title="Novo terminal (Ctrl+Shift+`)"></span>
+            <span class="codicon codicon-chevron-down" id="terminal-profiles" title="Perfis de terminal"></span>
             <span class="codicon codicon-trash" id="terminal-kill" title="Encerrar terminal"></span>
           </span>
           <span class="codicon codicon-debug-stop disabled" id="panel-stop" title="Parar (Shift+F2)"></span>
@@ -104,6 +106,7 @@
         </div>
         <div class="panel-body" id="panel-problems"></div>
         <pre class="panel-body" id="panel-output" hidden></pre>
+        <input class="input" id="output-input" placeholder="Entrada do programa (Enter envia)" spellcheck="false" hidden>
         <div class="panel-body" id="panel-terminal" hidden><div id="terminal-host"></div></div>
         <div class="panel-body" id="panel-debug" hidden>
           <pre id="debug-console"></pre>

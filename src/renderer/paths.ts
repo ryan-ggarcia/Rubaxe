@@ -60,7 +60,7 @@ export function minitestNameAt(text: string, line: number): string | undefined {
   }
 }
 
-export interface TestResult { file: string; line: number; name: string; status: 'passed' | 'failed' | 'pending'; message?: string; time?: number }
+export interface TestResult { file: string; line: number; name: string; status: 'passed' | 'failed' | 'pending'; message?: string; time?: number; id?: string }
 
 // RSpec `--format json` or Rubaxe's Minitest reporter -> results keyed by workspace-relative '/' paths.
 export function parseTestReport(json: string, root: string): TestResult[] {
@@ -70,7 +70,7 @@ export function parseTestReport(json: string, root: string): TestResult[] {
     return data.map((r: any) => ({ file: rel(r.file), line: r.line, name: `${r.group}#${r.name}`, status: r.status, message: r.message ?? undefined, time: r.time }));
   }
   return (data.examples ?? []).map((e: any) => ({
-    file: rel(e.file_path), line: e.line_number, name: e.full_description,
+    file: rel(e.file_path), line: e.line_number, name: e.full_description, id: e.id,
     status: e.status === 'passed' || e.status === 'failed' ? e.status : 'pending',
     message: e.exception ? `${e.exception.class}: ${e.exception.message}` : e.pending_message ?? undefined, time: e.run_time,
   }));
@@ -204,3 +204,108 @@ export function parseRakeTasks(out: string): { name: string; desc: string }[] {
 
 // Electron prefixes IPC rejections with "Error invoking remote method 'x': Error: "; users only need the reason.
 export const ipcMessage = (e: unknown) => (e as Error).message.replace(/^Error invoking remote method '\w+': (\w*Error: )?/, '');
+
+// "Ctrl+Shift+P" style key of a keydown. Cmd counts as Ctrl on macOS. Backquote and, with Alt held, letters and
+// digits come from the physical key: Shift turns e.key into "~" and Option on macOS into "‰" and friends.
+export function eventKey(e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; key: string; code: string }, platform: string): string {
+  const physical = e.code === 'Backquote' ? '`' : e.altKey ? /^(?:Key([A-Z])|Digit(\d))$/.exec(e.code)?.slice(1).find(Boolean)?.toLowerCase() : undefined;
+  return [(e.ctrlKey || (platform === 'darwin' && e.metaKey)) && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', physical ?? e.key.toLowerCase()].filter(Boolean).join('+');
+}
+
+// Read-only git commands run without optional locks (like VS Code): `git status` would otherwise rewrite .git/index,
+// and the file watcher would see that as a change and refresh again, forever.
+export function gitArgs(args: string[]): string[] {
+  const read = ['status', 'show', 'diff', 'blame', 'rev-parse', 'remote'].includes(args[0]) || (args[0] === 'branch' && !!args[1]?.startsWith('--format'));
+  return read ? ['--no-optional-locks', ...args] : args;
+}
+
+// Gemfile.lock lists the standard gem as "    standard (1.2.3)".
+export const usesStandard = (lock: string) => /^ {4}standard \(/m.test(lock);
+
+export const isGemfile = (path: string, root: string) => /^Gemfile(\.lock)?$/.test(relativeTo(root, path) ?? '');
+
+// Every folder that holds (directly or deeper) a *_spec.rb, workspace-relative.
+export function specDirs(files: string[], root: string): string[] {
+  const dirs = new Set<string>();
+  for (const f of files) {
+    const rel = relativeTo(root, f);
+    if (!rel?.endsWith('_spec.rb')) continue;
+    const parts = rel.split('/').slice(0, -1);
+    for (let i = 1; i <= parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
+  }
+  return [...dirs].sort();
+}
+
+export const rspecFolderArgs = (dir: string, filter: string) => [dir, ...(filter.trim() ? ['-e', filter.trim()] : [])];
+
+// How to rerun one result: RSpec example id (spec/a_spec.rb[1:2]) when the report had one, else file:line.
+export const testTarget = (r: { file: string; line: number; id?: string }) => r.id ? r.id.replace(/^\.\//, '') : `${r.file}:${r.line}`;
+
+// ---------- Rails: rename a resource ----------
+
+export const camelize = (snake: string) => snake.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+export const underscore = (camel: string) => camel.replace(/([a-z\d])([A-Z])/g, '$1_$2').toLowerCase();
+const simplePlural = (w: string) => /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies' : /(s|x|z|ch|sh)$/.test(w) ? w + 'es' : w + 's';
+// Irregular and uncountable words differ from the simple s/es/ies rule: the user confirms the plural for those.
+export const needsPluralConfirm = (snake: string) => pluralize(snake) !== simplePlural(snake);
+
+export interface RenamePlan { files: { from: string; to: string }[]; consts: { from: string; to: string; file: string }[] }
+
+// What changes when the resource of `rel` (Post -> Article) is renamed. `files` = workspace-relative '/' paths; only
+// files/folders that exist are listed. Tables, migrations and routes.rb are deliberately not part of the plan.
+export function railsRenamePlan(rel: string, files: string[], newCamel: string, newPlural: string): RenamePlan | undefined {
+  const r = railsResource(rel);
+  if (!r) return undefined;
+  const { ns, singular: os, plural: op } = r;
+  const ns2 = underscore(newCamel), np = newPlural;
+  const [OS, OP, NS, NP] = [camelize(os), camelize(op), newCamel, camelize(np)];
+  type Row = [from: string, to: string, consts: [string, string][]];
+  const rows: Row[] = [];
+  for (const n of [...new Set([ns, ''])]) {
+    rows.push([`app/models/${n}${os}.rb`, `app/models/${n}${ns2}.rb`, [[OS, NS]]]);
+    rows.push([`test/models/${n}${os}_test.rb`, `test/models/${n}${ns2}_test.rb`, [[`${OS}Test`, `${NS}Test`]]]);
+    rows.push([`spec/models/${n}${os}_spec.rb`, `spec/models/${n}${ns2}_spec.rb`, []]);
+  }
+  rows.push(
+    [`app/controllers/${ns}${op}_controller.rb`, `app/controllers/${ns}${np}_controller.rb`, [[`${OP}Controller`, `${NP}Controller`]]],
+    [`app/helpers/${ns}${op}_helper.rb`, `app/helpers/${ns}${np}_helper.rb`, [[`${OP}Helper`, `${NP}Helper`]]],
+    [`test/controllers/${ns}${op}_controller_test.rb`, `test/controllers/${ns}${np}_controller_test.rb`, [[`${OP}ControllerTest`, `${NP}ControllerTest`]]],
+    [`test/helpers/${ns}${op}_helper_test.rb`, `test/helpers/${ns}${np}_helper_test.rb`, [[`${OP}HelperTest`, `${NP}HelperTest`]]],
+    [`test/system/${ns}${op}_test.rb`, `test/system/${ns}${np}_test.rb`, [[`${OP}Test`, `${NP}Test`]]],
+    [`spec/controllers/${ns}${op}_controller_spec.rb`, `spec/controllers/${ns}${np}_controller_spec.rb`, []],
+    [`spec/requests/${ns}${op}_spec.rb`, `spec/requests/${ns}${np}_spec.rb`, []],
+    [`spec/helpers/${ns}${op}_helper_spec.rb`, `spec/helpers/${ns}${np}_helper_spec.rb`, []],
+    [`spec/system/${ns}${op}_spec.rb`, `spec/system/${ns}${np}_spec.rb`, []],
+  );
+  const plan: RenamePlan = { files: [], consts: [] };
+  for (const [from, to, consts] of rows) {
+    if (!files.includes(from)) continue;
+    plan.files.push({ from, to });
+    for (const [a, b] of consts) plan.consts.push({ from: a, to: b, file: from });
+  }
+  for (const base of ['app/views', 'spec/views']) {
+    const from = `${base}/${ns}${op}`;
+    if (files.some(f => f.startsWith(from + '/'))) plan.files.push({ from, to: `${base}/${ns}${np}` });
+  }
+  return plan;
+}
+
+// Lines of config/routes.rb that mention the resource, and migrations about it: listed for manual review, never edited.
+export function railsReview(routes: string, files: string[], singular: string, plural: string): string[] {
+  const re = new RegExp(`:(?:${plural}|${singular})\\b`);
+  const lines = routes.split(/\r?\n/).flatMap((l, i) => re.test(l) ? [`config/routes.rb:${i + 1}: ${l.trim()}`] : []);
+  const mig = new RegExp(`(^|_)(?:${plural}|${singular})(_|\\.rb$)`);
+  return [...lines, ...files.filter(f => f.startsWith('db/migrate/') && mig.test(f.slice(11)))];
+}
+
+export interface Inspection { rule: string; message: string; severity: 'warning' | 'info'; line: number; column: number; endLine: number; endColumn: number }
+
+// rubaxe_inspect.rb prints a JSON array, but `exec` merges stderr in: anything unparseable means "no findings".
+export function parseInspections(out: string): Inspection[] {
+  try {
+    const list = JSON.parse(out.trim());
+    return Array.isArray(list) ? list.filter(i => i && typeof i.message === 'string' && Number.isInteger(i.line) && Number.isInteger(i.column) && Number.isInteger(i.endLine) && Number.isInteger(i.endColumn)) : [];
+  } catch {
+    return [];
+  }
+}

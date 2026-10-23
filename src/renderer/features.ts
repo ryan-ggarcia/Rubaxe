@@ -27,9 +27,9 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['formatting', 'Formatar documento (Shift+Alt+F)', 'ok'],
     ['rename', 'Renomear símbolo (F2)', 'ok'],
     ['intentions', 'Ações no código: do↔{}, hash rocket, ternário…', 'ok'],
-    ['inspections', 'Inspeções extras (nil, tipos, Rails, RSpec, YARD)', 'planned'],
+    ['inspections', 'Inspeções próprias: YARD, nil e aridade', 'ok'],
     ['generate', 'Gerar attr_accessor, construtor, let do RSpec', 'ok'],
-    ['railsRename', 'Rename que entende Rails (model/controller/view)', 'planned'],
+    ['railsRename', 'Rename que entende Rails (model/controller/view)', 'ok'],
   ]],
   ['Executar e testar', [
     ['runFile', 'Executar arquivo Ruby (Ctrl+F5)', 'ok'],
@@ -63,10 +63,15 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
 ];
 
 const SETTINGS: Setting[] = [
+  ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
   ['Ruby', 'ruby.lspPath', 'Comando do servidor Ruby LSP (gem install ruby-lsp).', 'string', 'ruby-lsp'],
   ['Ruby', 'test.framework', 'Framework de testes.', ['auto', 'rspec', 'minitest'], 'auto'],
-  ['Terminal', 'terminal.shell', 'Shell do terminal integrado (padrão: PowerShell no Windows, $SHELL no Linux/macOS).', 'string', ''],
+  ['Ruby', 'rspec.fullBacktrace', 'RSpec: mostrar o backtrace completo (-b) nas falhas.', 'boolean', false],
+  ['Estilo de código (RuboCop)', 'rubocop.config', 'Configuração do RuboCop: "Rubaxe" permite gravar o estilo configurado aqui no projeto; "projeto" só usa o .rubocop.yml existente.', ['Rubaxe', 'projeto'], 'Rubaxe'],
+  ['Estilo de código (RuboCop)', 'rubocop.standard', 'Usar Standard em vez de RuboCop para formatar e analisar (só se a gem standard estiver no Gemfile.lock).', 'boolean', false],
+  ['Terminal', 'terminal.shell', 'Perfil do terminal integrado: nome (ex.: Git Bash) ou caminho do shell. Padrão: PowerShell no Windows, $SHELL no Linux/macOS.', 'string', ''],
+  ['Editor', 'files.autoSave', 'Salvar automaticamente 1 s depois de editar, ao sair do editor e ao trocar de aba.', 'boolean', true],
   ['Editor', 'editor.fontSize', 'Tamanho da fonte.', 'number', 14],
   ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
   ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],

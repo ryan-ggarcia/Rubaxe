@@ -39,6 +39,7 @@ const api = {
   onLspExit: on<[code: number | null]>('lspExit'),
   onRunData: on<[id: string, text: string]>('runData'),
   onRunExit: on<[id: string, code: number | null]>('runExit'),
+  runWrite: (id: string, data: string) => ipcRenderer.send('runWrite', id, data),
   debugLaunch: invoke<void, [cmd: string, args: string[], cwd: string]>('debugLaunch'),
   debugAttach: invoke<void, [host: string, port: number]>('debugAttach'),
   debugStop: invoke<void>('debugStop'),
@@ -47,12 +48,16 @@ const api = {
   onDapMessage: on<[msg: any]>('dapMessage'),
   onDebugOutput: on<[text: string]>('debugOutput'),
   onDebugEnd: on<[]>('debugEnd'),
-  ptySpawn: invoke<void, [id: string, cwd: string, cols: number, rows: number, shell: string]>('ptySpawn'),
+  ptySpawn: invoke<void, [id: string, cwd: string, cols: number, rows: number, shell: string, args?: string[]]>('ptySpawn'),
+  listShells: invoke<{ name: string; path: string; args: string[] }[]>('listShells'),
   ptyWrite: (id: string, data: string) => ipcRenderer.send('ptyWrite', id, data),
   ptyResize: (id: string, cols: number, rows: number) => ipcRenderer.send('ptyResize', id, cols, rows),
   ptyKill: invoke<void, [id: string]>('ptyKill'),
   onPtyData: on<[id: string, data: string]>('ptyData'),
   onPtyExit: on<[id: string, code: number]>('ptyExit'),
+  watchFolder: invoke<void, [root: string]>('watchFolder'),
+  onFsChange: on<[paths: string[]]>('fsChange'),
+  setTitleBarOverlay: (color: string, symbolColor: string) => ipcRenderer.send('setTitleBarOverlay', color, symbolColor),
 };
 
 export type RubaxeApi = typeof api;

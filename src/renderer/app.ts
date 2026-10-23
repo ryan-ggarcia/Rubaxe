@@ -3,15 +3,17 @@ import type * as M from 'monaco-editor';
 import { $, abs, api, basename, fileIcon, h, icon, notify, ws } from './dom.ts';
 import * as Debug from './debug.ts';
 import * as Editor from './editor.ts';
-import { initExplorer, renderExplorer, renderOutline, resetExplorer } from './explorer.ts';
+import { initExplorer, renderExplorer, renderOutline, resetExplorer, syncTree } from './explorer.ts';
 import * as Features from './features.ts';
 import * as Git from './git.ts';
 import * as Hierarchy from './hierarchy.ts';
-import { registerIntentions } from './intentions.ts';
+import { enterInBraceBlock, registerIntentions } from './intentions.ts';
 import * as Lsp from './lsp-client.ts';
+import { initMenubar, type Menu, type MenuItem } from './menu.ts';
+import pkg from '../../package.json' with { type: 'json' };
 import * as Panel from './panel.ts';
 import * as Rails from './rails.ts';
-import { fuzzyScore, relativeTo } from './paths.ts';
+import { eventKey, fuzzyScore, isGemfile, relativeTo, usesStandard } from './paths.ts';
 import { quickPick, setCloseHandler, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
 import * as Terminal from './terminal.ts';
@@ -35,7 +37,7 @@ const commands: Command[] = [
   { id: 'search', label: 'Exibir: Pesquisar no Projeto', key: 'Ctrl+Shift+F', icon: 'search', run: () => { showView('search'); focusSearch(); } },
   { id: 'rubyView', label: 'Exibir: Ruby', icon: 'ruby', run: () => showView('ruby') },
   { id: 'toggleSidebar', label: 'Exibir: Alternar Barra Lateral', key: 'Ctrl+B', icon: 'layout-sidebar-left', run: () => toggleSidebar() },
-  { id: 'togglePanel', label: 'Exibir: Alternar Painel', key: 'Ctrl+J', icon: 'layout-panel', run: () => Panel.toggle() },
+  { id: 'togglePanel', label: 'Exibir: Alternar Painel', key: 'Ctrl+J', icon: 'layout-panel', run: () => togglePanel() },
   { id: 'problems', label: 'Exibir: Problemas', key: 'Ctrl+Shift+M', icon: 'warning', run: () => Panel.show('problems') },
   { id: 'output', label: 'Exibir: Saída', key: 'Ctrl+Shift+U', icon: 'output', run: () => Panel.show('output') },
   { id: 'settings', label: 'Preferências: Abrir Configurações', key: 'Ctrl+,', icon: 'settings-gear', run: () => Editor.openSettings() },
@@ -53,7 +55,9 @@ const commands: Command[] = [
   { id: 'gotoTest', label: 'Ruby: Ir para Teste / Implementação', key: 'Ctrl+Shift+T', icon: 'go-to-file', run: () => Ruby.gotoTest() },
   { id: 'stop', label: 'Ruby: Parar Execução', key: 'Shift+F2', icon: 'debug-stop', run: () => Ruby.stopAll() },
   { id: 'rake', label: 'Rake: Executar Tarefa...', icon: 'tools', run: () => Ruby.rakeTasks() },
-  ...['install', 'update', 'outdated', 'lock', 'clean'].map(sub => ({ id: `bundle.${sub}`, label: `Bundler: ${sub}`, icon: 'package', run: () => Ruby.bundle(sub) })),
+  { id: 'bundleGem', label: 'Bundler: Criar Gem...', icon: 'package', run: () => Ruby.bundleGem() },
+  { id: 'rspecFolder', label: 'RSpec: Executar Pasta...', icon: 'run-all', run: () => Ruby.runSpecFolder() },
+  ...['install', 'update', 'outdated', 'lock', 'clean', 'init', 'pack'].map(sub => ({ id: `bundle.${sub}`, label: `Bundler: ${sub}`, icon: 'package', run: () => Ruby.bundle(sub) })),
   { id: 'debugStart', label: 'Depurar: Iniciar / Continuar', key: 'F5', icon: 'debug-alt', run: () => Debug.active() ? Debug.cont() : debugFile() },
   { id: 'debugStop', label: 'Depurar: Parar', key: 'Shift+F5', icon: 'debug-stop', run: () => Debug.stop() },
   { id: 'stepOver', label: 'Depurar: Passar por Cima', key: 'F10', icon: 'debug-step-over', run: () => Debug.stepOver() },
@@ -67,6 +71,7 @@ const commands: Command[] = [
   { id: 'debugView', label: 'Exibir: Executar e Depurar', key: 'Ctrl+Shift+D', icon: 'debug-alt', run: () => showView('debug') },
   { id: 'debugConsole', label: 'Exibir: Console de Depuração', key: 'Ctrl+Shift+Y', icon: 'debug-console', run: () => Panel.show('debug') },
   { id: 'railsRelated', label: 'Rails: Ir para Arquivo Relacionado...', key: 'Shift+Alt+R', icon: 'references', run: () => Rails.related() },
+  { id: 'railsRename', label: 'Rails: Renomear Recurso...', icon: 'edit', run: () => Rails.renameResource() },
   { id: 'railsGenerate', label: 'Rails: Executar Generator...', icon: 'wand', run: () => Rails.generate() },
   { id: 'railsDestroy', label: 'Rails: Desfazer Generator (destroy)...', icon: 'trash', run: () => Rails.generate(true) },
   { id: 'railsServer', label: 'Rails: Iniciar Servidor', icon: 'server-process', run: () => Rails.server() },
@@ -76,11 +81,17 @@ const commands: Command[] = [
   { id: 'terminalAbnt', label: 'Exibir: Terminal', key: "Ctrl+'", run: () => Terminal.show() },
   { id: 'terminalNew', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+`', icon: 'add', run: () => Terminal.create() },
   { id: 'terminalNewAbnt', label: 'Terminal: Novo Terminal', key: 'Ctrl+Shift+"', run: () => Terminal.create() },
+  { id: 'terminalProfile', label: 'Terminal: Novo Terminal com Perfil...', icon: 'chevron-down', run: () => Terminal.pickProfile('Novo terminal com o perfil...', p => void Terminal.create(p.name, undefined, false, p)) },
+  { id: 'terminalDefault', label: 'Terminal: Selecionar Perfil Padrão...', icon: 'gear', run: () => Terminal.pickProfile('Perfil padrão do terminal', p => { Features.set('terminal.shell', p.name); onSettingChange('terminal.shell'); notify(`Perfil padrão: ${p.name}.`); }) },
   { id: 'irb', label: 'Ruby: Console IRB', icon: 'terminal', run: () => openIrb() },
   { id: 'setupRuby', label: 'Ruby: Configurar Ambiente (Ruby, ruby-lsp, ridk)', icon: 'tools', run: () => setupRuby() },
+  { id: 'intentions', label: 'Editor: Mostrar Ações e Correções Rápidas', key: 'Alt+Enter', icon: 'lightbulb', run: () => { Editor.editor.focus(); Editor.editor.trigger('menu', 'editor.action.quickFix', null); } },
   { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Shift+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
   { id: 'scmView', label: 'Exibir: Controle de Código', key: 'Ctrl+Shift+G', icon: 'source-control', run: () => showView('scm') },
   { id: 'gitCommit', label: 'Git: Commit', icon: 'check', run: () => Git.commit() },
+  { id: 'gitPush', label: 'Git: Push', icon: 'repo-push', run: () => Git.sync('push') },
+  { id: 'gitPull', label: 'Git: Pull', icon: 'repo-pull', run: () => Git.sync('pull') },
+  { id: 'gitFetch', label: 'Git: Fetch', icon: 'repo-fetch', run: () => Git.sync('fetch') },
   { id: 'gitBranch', label: 'Git: Trocar Branch...', icon: 'git-branch', run: () => Git.switchBranch() },
   { id: 'gitBlame', label: 'Git: Alternar Blame na Linha', icon: 'person', run: () => Git.toggleBlame() },
   { id: 'gitRefresh', label: 'Git: Atualizar Status', icon: 'refresh', run: () => Git.refresh() },
@@ -94,6 +105,22 @@ const commands: Command[] = [
   { id: 'lspLog', label: 'Ruby: Mostrar Log do Ruby LSP', icon: 'output', run: () => { Panel.show('output'); Panel.append(lspLog.join('')); } },
 ];
 
+let panelOpened = false;
+function togglePanel() {
+  const opening = $('#panel').hidden;
+  Panel.toggle();
+  if (!opening && Editor.editor?.getModel()) Editor.editor.focus();
+  if (opening && (Panel.current === 'terminal' || !panelOpened)) Terminal.show();
+  panelOpened = true;
+}
+
+// Gemfile present but `bundle check` fails: a status bar item offers bundle install (exit 1 = gems missing).
+async function checkBundle() {
+  const el = $('#sb-bundle');
+  const missing = ws.root && ws.hasGemfile && Features.on('bundler') && (await api.exec('bundle', ['check'], ws.root)).code === 1;
+  el.hidden = !missing;
+}
+
 const debugFile = () => Ruby.runFile(Debug.start, 'debugger');
 const openIrb = () => Terminal.create('irb', ws.hasGemfile ? 'bundle exec irb' : 'irb', true);
 // Same script the installer offers: Ruby+Devkit if missing, ridk toolchain, ruby-lsp. Runs in a terminal so progress shows.
@@ -105,8 +132,34 @@ const RUBY_VIEW = ['runFile', 'runTests', 'runTestLine', 'runAllTests', 'rerunFa
 
 // "Ctrl+Shift+P" style keys -> handler; compared with the normalized key of each keydown.
 const keymap = new Map(commands.filter(c => c.key).map(c => [c.key!.toLowerCase(), c]));
-// Cmd counts as Ctrl on macOS; Backquote by physical key because Shift turns e.key into "~".
-const eventKey = (e: KeyboardEvent) => [(e.ctrlKey || (api.platform === 'darwin' && e.metaKey)) && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', e.code === 'Backquote' ? '`' : e.key.toLowerCase()].filter(Boolean).join('+');
+
+// ---------- menu bar ----------
+
+// A string is a command id, an object a custom item (act = Monaco action on the editor), null a separator.
+type Entry = string | MenuItem | null;
+const act = (label: string, action: string, key: string): Entry => ({ label, key, run: () => { Editor.editor.focus(); if (Editor.editor.getModel()) Editor.editor.trigger('menu', action, null); } });
+const MENUS: [string, Entry[]][] = [
+  ['Arquivo', ['openFolder', 'openFile', null, 'save', 'closeTab', null, 'settings']],
+  ['Editar', [act('Desfazer', 'undo', 'Ctrl+Z'), act('Refazer', 'redo', 'Ctrl+Y'), null,
+    act('Recortar', 'editor.action.clipboardCutAction', 'Ctrl+X'), act('Copiar', 'editor.action.clipboardCopyAction', 'Ctrl+C'), act('Colar', 'editor.action.clipboardPasteAction', 'Ctrl+V'), null,
+    act('Localizar', 'actions.find', 'Ctrl+F'), act('Substituir', 'editor.action.startFindReplace', 'Ctrl+H'), 'search', null,
+    act('Comentar Linha', 'editor.action.commentLine', 'Ctrl+/')]],
+  ['Seleção', [act('Selecionar Tudo', 'editor.action.selectAll', 'Ctrl+A'), act('Expandir Seleção', 'editor.action.smartSelect.expand', 'Shift+Alt+→'), null,
+    act('Copiar Linha para Cima', 'editor.action.copyLinesUpAction', 'Shift+Alt+↑'), act('Copiar Linha para Baixo', 'editor.action.copyLinesDownAction', 'Shift+Alt+↓'),
+    act('Mover Linha para Cima', 'editor.action.moveLinesUpAction', 'Alt+↑'), act('Mover Linha para Baixo', 'editor.action.moveLinesDownAction', 'Alt+↓'), null,
+    act('Adicionar Cursor Acima', 'editor.action.insertCursorAbove', 'Ctrl+Alt+↑'), act('Adicionar Cursor Abaixo', 'editor.action.insertCursorBelow', 'Ctrl+Alt+↓'), act('Adicionar Próxima Ocorrência', 'editor.action.addSelectionToNextFindMatch', 'Ctrl+D')]],
+  ['Exibir', ['palette', null, 'explorer', 'search', 'scmView', 'debugView', 'testsView', 'rubyView', null, 'problems', 'output', 'debugConsole', 'terminal', null, 'toggleSidebar', 'togglePanel']],
+  ['Ir', ['quickOpen', 'workspaceSymbol', act('Ir para Linha...', 'editor.action.gotoLine', 'Ctrl+G'), null, 'gotoTest', 'railsRelated']],
+  ['Executar', ['rspecFolder', 'debugStart', 'debugStop', null, 'runFile', 'runTests', 'runTestLine', 'runAllTests', 'stop', null, 'stepOver', 'stepInto', 'stepOut', 'toggleBreakpoint']],
+  ['Terminal', ['terminalNew', 'terminalProfile', 'terminalDefault', 'terminal', null, 'irb', 'sendToConsole']],
+  ['Ajuda', ['palette', { label: 'Atalhos', run: () => quickOpen('>') }, { label: 'Sobre o Rubaxe', run: () => notify(`Rubaxe ${pkg.version} — IDE para Ruby`) }]],
+];
+
+function menuItem(e: Entry): MenuItem | null {
+  if (e === null || typeof e === 'object') return e;
+  const c = commands.find(x => x.id === e)!;
+  return { label: c.label.replace(/^[^:]+: /, ''), key: c.key, run: () => void c.run() };
+}
 
 // ---------- layout ----------
 
@@ -172,6 +225,9 @@ function initStatusBar() {
     placeholder: 'Ruby LSP',
     items: () => [commands.find(c => c.id === 'restartLsp')!, commands.find(c => c.id === 'lspLog')!].map(c => ({ label: c.label, icon: c.icon, run: c.run })),
   }));
+  const bundleItem = statusItem('sb-bundle', 'left', () => Ruby.bundle('install'));
+  setStatus(bundleItem, 'warning', 'Gems faltando', 'Há gems do Gemfile não instaladas. Clique para rodar bundle install.');
+  bundleItem.hidden = true;
   statusItem('sb-ruby', 'left', () => Ruby.selectInterpreter(() => onSettingChange('ruby.path')));
   const problems = statusItem('sb-problems', 'left', () => Panel.show('problems'));
   problems.append(icon('error'), h('span', { id: 'sb-errors' }, '0'), icon('warning'), h('span', { id: 'sb-warnings' }, '0'));
@@ -205,11 +261,13 @@ async function refreshInterpreter() {
 
 // ---------- workspace ----------
 
-function startLsp() {
+async function startLsp() {
   if (!ws.root) return notify('Abra uma pasta para iniciar o Ruby LSP.');
   const el = $('#sb-lsp');
+  const standard = Features.get<boolean>('rubocop.standard') && usesStandard(await api.readFile(abs('Gemfile.lock')).catch(() => ''));
   void Lsp.start(ws.root, Features.get<string>('ruby.lspPath'), {
     ensureModel: Editor.ensureModel,
+    options: standard ? { formatter: 'standard', linters: ['standard'] } : undefined,
     log: text => { lspLog.push(text); if (lspLog.length > 2000) lspLog.splice(0, 500); },
     status: (state, detail) => {
       const look = { starting: ['loading', 'Ruby LSP: iniciando'], ready: ['check', 'Ruby LSP'], busy: ['sync', `Ruby LSP: ${(detail ?? 'trabalhando').replace(/^Ruby LSP:? */, '')}`], error: ['error', 'Ruby LSP'], off: ['circle-slash', 'Ruby LSP'] }[state];
@@ -224,6 +282,7 @@ async function openFolder(path?: string) {
   const target = path ?? await api.openFolder();
   if (!target || !Editor.closeAll()) return;
   ws.root = target;
+  void api.watchFolder(target);
   ws.files = await api.listFiles(target);
   ws.hasGemfile = await api.exists(abs('Gemfile'));
   ws.isRails = await api.exists(abs('config/application.rb')) && await api.exists(abs('bin/rails'));
@@ -239,6 +298,7 @@ async function openFolder(path?: string) {
   startLsp();
   void refreshInterpreter();
   void Git.refresh();
+  void checkBundle();
   void Ruby.loadGems($('#gems-body'));
 }
 
@@ -300,7 +360,11 @@ function onSettingChange(key: string) {
   if (key.startsWith('editor.')) Editor.applyOptions();
   if (key === 'features.diagnostics') Lsp.refreshDiagnostics();
   if (key === 'features.documentSymbols') void renderOutline();
-  if (key === 'ruby.lspPath' && ws.root) startLsp();
+  if (key === 'workbench.theme') applyTheme();
+  if (key === 'features.inspections') Ruby.inspectAll();
+  if (key === 'ruby.lspPath' && ws.root) void startLsp();
+  if (key === 'rubocop.standard' && ws.root) void startLsp();
+  if (key === 'rubocop.config' && Features.get('rubocop.config') === 'Rubaxe' && ws.root) void Ruby.writeCodeStyle(startLsp);
   if (key === 'ruby.path' || key === 'features.sdk') void refreshInterpreter();
   if (key === 'ruby.path') void Ruby.applyRubyBin().then(() => { if (ws.root) startLsp(); });
   if (key === 'features.git') void Git.refresh();
@@ -310,7 +374,35 @@ function onSettingChange(key: string) {
 
 // ---------- boot ----------
 
+// Live switch of every themed surface: CSS variables, Monaco and the terminals. (The window's native title bar overlay is the main process's.)
+function applyTheme() {
+  document.documentElement.dataset.theme = Features.get<string>('workbench.theme') === 'claro' ? 'light' : 'dark';
+  monaco.editor.setTheme(document.documentElement.dataset.theme === 'light' ? 'rubaxe-light' : 'rubaxe-dark');
+  Terminal.applyTheme();
+  void api.setTitleBarOverlay(...(document.documentElement.dataset.theme === 'light' ? ['#F3F3F3', '#3B3B3B'] : ['#181818', '#CCCCCC']) as [string, string]);
+}
+
 function defineTheme() {
+  monaco.editor.defineTheme('rubaxe-light', {
+    base: 'vs', inherit: true,
+    rules: [
+      { token: 'namespace', foreground: '267F99' }, { token: 'class', foreground: '267F99' }, { token: 'type', foreground: '267F99' },
+      { token: 'method', foreground: '795E26' }, { token: 'function', foreground: '795E26' }, { token: 'parameter', foreground: '001080' },
+      { token: 'variable', foreground: '001080' }, { token: 'property', foreground: '001080' }, { token: 'enumMember', foreground: '0070C1' },
+    ],
+    colors: {
+      'editor.background': '#FFFFFF', 'editor.foreground': '#3B3B3B', 'editorLineNumber.foreground': '#6E7681', 'editorLineNumber.activeForeground': '#3B3B3B',
+      'editorWidget.background': '#F8F8F8', 'editorWidget.border': '#C8C8C8', 'editor.findMatchBackground': '#F2C94C', 'editor.selectionBackground': '#F6D5D2',
+      'editor.inactiveSelectionBackground': '#FBE6E4', 'list.activeSelectionBackground': '#F6D5D2', 'list.activeSelectionForeground': '#1F1F1F',
+      'list.inactiveSelectionBackground': '#FBE6E4', 'list.focusOutline': '#CC342D', 'list.highlightForeground': '#A9261F',
+      'editorSuggestWidget.selectedBackground': '#F6D5D2', 'editorSuggestWidget.highlightForeground': '#A9261F', 'peekViewBorder': '#CC342D',
+      'peekViewResult.selectionBackground': '#F6D5D2', 'peekViewTitle.background': '#FBEFEE', 'button.background': '#CC342D', 'button.hoverBackground': '#A9261F',
+      'textLink.foreground': '#A9261F', 'textLink.activeForeground': '#7F1D18', 'editorWidget.resizeBorder': '#CC342D', 'inputOption.activeBorder': '#CC342D',
+      'inputOption.activeBackground': '#CC342D33', 'editorCursor.foreground': '#3B3B3B', 'input.background': '#FFFFFF', 'input.border': '#C8C8C8',
+      'focusBorder': '#CC342D', 'editorGroup.border': '#E0E0E0', 'peekViewEditor.background': '#FFFFFF', 'peekViewResult.background': '#F8F8F8',
+      'peekViewEditor.matchHighlightBackground': '#F2C94C88',
+    },
+  });
   monaco.editor.defineTheme('rubaxe-dark', {
     base: 'vs-dark', inherit: true,
     // Semantic token types from the Ruby LSP (VS Code Dark Modern colors).
@@ -322,8 +414,12 @@ function defineTheme() {
     colors: {
       'editor.background': '#1F1F1F', 'editor.foreground': '#CCCCCC', 'editorLineNumber.foreground': '#6E7681',
       'editorLineNumber.activeForeground': '#CCCCCC', 'editorWidget.background': '#202020', 'editorWidget.border': '#313131',
-      'editor.findMatchBackground': '#9E6A03', 'editorOverviewRuler.border': '#010409', 'input.background': '#313131',
-      'input.border': '#3C3C3C', 'focusBorder': '#0078D4', 'editorGroup.border': '#FFFFFF17', 'peekViewEditor.background': '#1F1F1F',
+      'editor.findMatchBackground': '#9E6A03', 'editor.selectionBackground': '#6B2420', 'editor.inactiveSelectionBackground': '#4A2220',
+      'list.activeSelectionBackground': '#5A1F1C', 'list.inactiveSelectionBackground': '#3A2220', 'list.focusOutline': '#CC342D', 'list.highlightForeground': '#FF6B63',
+      'editorSuggestWidget.selectedBackground': '#5A1F1C', 'editorSuggestWidget.highlightForeground': '#FF6B63', 'peekViewBorder': '#CC342D', 'peekViewResult.selectionBackground': '#5A1F1C',
+      'peekViewTitle.background': '#2A1F1F', 'button.background': '#CC342D', 'button.hoverBackground': '#A9261F', 'textLink.foreground': '#FF6B63', 'textLink.activeForeground': '#FF8A83',
+      'editorWidget.resizeBorder': '#CC342D', 'inputOption.activeBorder': '#CC342D', 'inputOption.activeBackground': '#CC342D66', 'editorCursor.foreground': '#CCCCCC', 'editorOverviewRuler.border': '#010409', 'input.background': '#313131',
+      'input.border': '#3C3C3C', 'focusBorder': '#CC342D', 'editorGroup.border': '#FFFFFF17', 'peekViewEditor.background': '#1F1F1F',
       'peekViewResult.background': '#1F1F1F', 'peekViewEditor.matchHighlightBackground': '#BB800966',
     },
   });
@@ -335,14 +431,32 @@ async function boot() {
   await Ruby.applyRubyBin();
   defineTheme();
   Editor.createEditor(container => Features.render(container, onSettingChange));
+  applyTheme(); // after createEditor: its theme option would reset the global one
   Lsp.registerProviders();
+  // Enter inside a one-line { } block becomes do…end (opt-in); anything else is the normal Enter.
+  // onKeyDown is per instance (addCommand is global and would also hit the peek and diff editors); no hit = Monaco's normal Enter.
+  Editor.editor.onKeyDown(e => {
+    const ed = Editor.editor, pos = ed.getPosition(), model = ed.getModel();
+    if (e.keyCode !== monaco.KeyCode.Enter || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || !Features.get<boolean>('style.braceToDoEndOnEnter') || !pos || !model) return;
+    if (ed.getSelections()?.length !== 1 || !ed.getSelection()!.isEmpty() || model.getLanguageId() !== 'ruby') return;
+    const ctx = (ed as unknown as { _contextKeyService?: { getContextKeyValue(k: string): unknown } })._contextKeyService;
+    if (['suggestWidgetVisible', 'parameterHintsVisible', 'inSnippetMode', 'renameInputVisible', 'findWidgetVisible'].some(k => ctx?.getContextKeyValue(k))) return;
+    const hit = enterInBraceBlock(model.getLinesContent(), pos.lineNumber, pos.column);
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ed.executeEdits('brace-enter', hit.edits.map(x => ({ range: new monaco.Range(...x.range), text: x.text })));
+    ed.setPosition({ lineNumber: hit.cursor[0], column: hit.cursor[1] });
+  });
   registerIntentions(id => Features.on(id));
-  Panel.initPanel(Ruby.stopAll);
+  initMenubar(MENUS.map(([title, items]): Menu => [title, items.map(menuItem)]));
+  Panel.initPanel(Ruby.stopAll, Terminal.show);
   initExplorer(() => openFolder());
   initSearch();
   Debug.initDebug(() => debugFile());
   Tests.initTests();
   Rails.initRails();
+  Ruby.initInspect();
   Terminal.initTerminal();
   Git.initGit();
   initStatusBar();
@@ -366,7 +480,10 @@ async function boot() {
 
   // Capture phase so workbench shortcuts win over Monaco's own bindings.
   window.addEventListener('keydown', e => {
-    const cmd = keymap.get(eventKey(e));
+    const k = eventKey(e, api.platform);
+    // In the terminal everything belongs to the shell (readline) except these IDE keys.
+    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c|v)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
+    const cmd = keymap.get(k);
     if (!cmd) return;
     e.preventDefault();
     e.stopPropagation();
@@ -374,6 +491,7 @@ async function boot() {
   }, true);
 
   window.addEventListener('focus', () => void Editor.syncFromDisk());
+  api.onFsChange(async paths => { if (paths.some(p => isGemfile(p, ws.root))) ws.hasGemfile = await api.exists(abs('Gemfile')); await Editor.syncFromDisk(paths); await syncTree(paths); Git.scheduleRefresh(); if (paths.some(p => isGemfile(p, ws.root))) void checkBundle(); });
   api.onCloseRequest(() => {
     const dirty = Editor.tabs.filter(t => t.dirty).map(t => t.title);
     if (!dirty.length || confirm(`Há alterações não salvas em: ${dirty.join(', ')}.\nFechar o Rubaxe e descartar as alterações?`)) api.confirmClose();

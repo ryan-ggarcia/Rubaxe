@@ -1,8 +1,11 @@
 // Ruby intentions and code generation as pure text transforms (no Monaco), offered through Ctrl+. in the editor.
 // Lines and columns are 1-based. Block structure is found by indentation, so code formatted the usual Ruby way is assumed.
 
+import { localeKeys } from './paths.ts';
+
 export interface TextEdit { range: [startLine: number, startCol: number, endLine: number, endCol: number]; text: string }
-export interface Intention { title: string; edits: TextEdit[] }
+// i18n: besides the edits, the entry `key: value` must be added to the locale file (done by the editor side, see registerIntentions).
+export interface Intention { title: string; edits: TextEdit[]; i18n?: { key: string; value: string } }
 export interface Sel { sl: number; sc: number; el: number; ec: number }
 
 const indentOf = (l: string) => /^\s*/.exec(l)![0];
@@ -40,6 +43,59 @@ function doEndToBrace(lines: string[], i: number): Intention | undefined {
   const body = lines[i + 1].trim();
   if (!body || /\b(do|if|unless|while|case|begin|def|class|module)\b\s*$/.test(body)) return undefined;
   return { title: 'Converter do…end em { }', edits: [replaceLines(lines, i + 1, i + 3, `${m[1]}${m[2]} {${m[3] ? ' ' + m[3].trim() : ''} ${body} }`)] };
+}
+
+// Enter pressed inside a one-line `{ }` block (cursor between the braces): the edits turn it into do…end; `cursor` = [line, col] for the body.
+export function enterInBraceBlock(lines: string[], sl: number, sc: number): { edits: TextEdit[]; cursor: [number, number] } | undefined {
+  const line = lines[sl - 1] ?? '';
+  if (sc - 1 <= line.indexOf('{') || sc - 1 > line.lastIndexOf('}')) return undefined;
+  const x = braceToDoEnd(lines, sl - 1);
+  return x && { edits: x.edits, cursor: [sl + 1, x.edits[0].text.split('\n')[1].length + 1] };
+}
+
+// ---------- block parameters ----------
+
+// Rewrites the block that starts on line i (`{ |p| body }` on one line, or `do |p|` … `end`); f maps (params, body) to the new ones.
+function rewriteBlock(lines: string[], i: number, f: (params: string | undefined, body: string) => [string | undefined, string] | undefined): TextEdit | undefined {
+  const one = /^(\s*.*?[\w)?!\]])\s*\{\s*(?:\|([^|]*)\|)?\s*(.*?)\s*\}\s*$/.exec(lines[i]);
+  if (one?.[3]) {
+    const r = f(one[2], one[3]);
+    return r && replaceLines(lines, i + 1, i + 1, `${one[1]} {${r[0] ? ` |${r[0]}|` : ''} ${r[1]} }`);
+  }
+  const multi = /^(.*\bdo)(?:\s*\|([^|]*)\|)?\s*$/.exec(lines[i]);
+  const b = multi && blockAt(lines, i);
+  if (!multi || !b || b.elseIdx !== undefined || b.endIdx < i + 2) return undefined;
+  const r = f(multi[2], lines.slice(i + 1, b.endIdx).join('\n'));
+  return r && replaceLines(lines, i + 1, b.endIdx, `${multi[1]}${r[0] ? ` |${r[0]}|` : ''}\n${r[1]}`);
+}
+
+// shortcut: textual match (strings and nested blocks that reuse the name are rewritten too), fine for the usual short blocks.
+const ident = (n: string) => new RegExp(`(?<![\\w.:@$])${n}\\b(?![?!(]|:(?!:))`, 'g');
+
+function namedToNumbered(lines: string[], i: number): Intention | undefined {
+  let single = true;
+  const edit = rewriteBlock(lines, i, (p, body) => {
+    const names = p?.split(',').map(s => s.trim()) ?? [];
+    if (!names.length || names.length > 9 || /\b(_[1-9]|it)\b/.test(body) || !names.every(n => /^[a-z_]\w*$/.test(n) && ident(n).test(body)) || new Set(names).size !== names.length) return undefined;
+    single = names.length === 1;
+    return [undefined, names.reduce((t, n, k) => t.replace(ident(n), single ? 'it' : `_${k + 1}`), body)];
+  });
+  return edit && { title: single ? 'Usar it no lugar do parâmetro nomeado' : 'Usar parâmetros numerados (_1, _2) no lugar dos nomeados', edits: [edit] };
+}
+
+function numberedToNamed(lines: string[], i: number): Intention | undefined {
+  if (/^\s*(it|specify|example|describe|context)\b/.test(lines[i])) return undefined;
+  const edit = rewriteBlock(lines, i, (p, body) => {
+    if (p) return undefined;
+    const max = Math.max(0, ...[...body.matchAll(/(?<![\w.:@$])_([1-9])\b/g)].map(m => +m[1]));
+    const useIt = !max && /(?<![\w.:@$])it\b(?!\s*["'(]|\s+do\b|\s*\{|[?!]|:(?!:))/.test(body);
+    if (!max && !useIt) return undefined;
+    const names = max <= 1 ? ['item'] : Array.from({ length: max }, (_, k) => `item${k + 1}`);
+    if (names.some(n => ident(n).test(body))) return undefined;
+    const out = useIt ? body.replace(/(?<![\w.:@$])it\b(?!\s*["'(]|\s+do\b|\s*\{|[?!]|:(?!:))/g, names[0]) : body.replace(/(?<![\w.:@$])_([1-9])\b/g, (_, d) => names[+d - 1]);
+    return [names.join(', '), out];
+  });
+  return edit && { title: 'Dar nomes aos parâmetros do bloco (_1, it)', edits: [edit] };
 }
 
 // ---------- hashes ----------
@@ -163,6 +219,22 @@ function mergeNestedIf(lines: string[], i: number): Intention | undefined {
   return { title: 'Juntar ifs aninhados', edits: [replaceLines(lines, i + 1, ob.endIdx + 1, [`${outer[1]}if ${wrap(outer[2])} && ${wrap(inner[2])}`, ...body, `${outer[1]}end`].join('\n'))] };
 }
 
+// Two `if`s in a row with the same body that ends in return/raise/next/break/throw/fail -> one `if a || b`.
+function mergeSequentialIf(lines: string[], i: number): Intention | undefined {
+  const a = /^(\s*)if\s+(.+?)\s*$/.exec(lines[i]);
+  const ab = a && blockAt(lines, i);
+  if (!a || !ab || ab.elseIdx !== undefined) return undefined;
+  const j = ab.endIdx + 1;
+  const b = /^(\s*)if\s+(.+?)\s*$/.exec(lines[j] ?? '');
+  const bb = b && blockAt(lines, j);
+  if (!b || !bb || bb.elseIdx !== undefined || b[1] !== a[1]) return undefined;
+  const body = lines.slice(i + 1, ab.endIdx);
+  // Only equivalent when the body leaves the flow: otherwise it would run once instead of twice when both hold.
+  if (!body.length || body.join('\n') !== lines.slice(j + 1, bb.endIdx).join('\n') || !/^(return|raise|next|break|throw|fail)\b/.test(body[body.length - 1].trim())) return undefined;
+  const wrap = (c: string) => /\b(and|or|not)\b|\?.*:/.test(c) ? `(${c})` : c;
+  return { title: 'Juntar ifs em sequência com o mesmo corpo (||)', edits: [replaceLines(lines, i + 1, bb.endIdx + 1, [`${a[1]}if ${wrap(a[2])} || ${wrap(b[2])}`, ...body, `${a[1]}end`].join('\n'))] };
+}
+
 function splitIf(lines: string[], i: number): Intention | undefined {
   const m = /^(\s*)if\s+(.+?)\s+&&\s+(.+?)\s*$/.exec(lines[i]);
   const b = m && blockAt(lines, i);
@@ -228,6 +300,76 @@ function numberUnderscores(lines: string[], i: number, col: number): Intention |
   return { title: 'Separar milhares com _', edits: [{ range, text: digits.replace(/\B(?=(\d{3})+$)/g, '_') + dot }] };
 }
 
+// ---------- i18n ----------
+
+const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+
+// Plain string literal under the cursor -> t('strings.<slug>'). `keys` = existing locale keys; undefined = no locale file, not offered.
+function stringToI18n(lines: string[], i: number, col: number, keys: string[] | undefined): Intention | undefined {
+  if (!keys || /^\s*(require|require_relative|gem|source|load|autoload)\b/.test(lines[i])) return undefined;
+  const m = tokenAt(lines[i], col, /"((?:[^"\\#]|#(?!\{))*)"|'([^'\\]*)'/g);
+  const value = m && (m[1] ?? m[2]);
+  const base = value && (/\s/.test(value) || /^[A-Z]/.test(value)) ? slug(value) : '';
+  if (!m || !value || !base || lines[i][m.index! + m[0].length] === ':') return undefined;
+  let key = `strings.${base}`, n = 1;
+  while (keys.includes(key)) key = `strings.${base}_${++n}`;
+  const short = value.length > 30 ? value.slice(0, 30) + '…' : value;
+  return { title: `Mover "${short}" para o arquivo de i18n`, i18n: { key, value }, edits: [{ range: [i + 1, m.index! + 1, i + 1, m.index! + m[0].length + 1], text: `t('${key}')` }] };
+}
+
+// Appends `scope.leaf: "value"` to the locale YAML, under the first top-level key.
+// shortcut: assumes 2-space indentation and that the first root key is the locale; no merge with exotic YAML (anchors, flow style), undefined if no root.
+export function addLocaleKey(yml: string, key: string, value: string): string | undefined {
+  const eol = yml.includes('\r\n') ? '\r\n' : '\n';
+  const lines = yml.replace(/\r?\n$/, '').split(/\r?\n/);
+  const root = lines.findIndex(l => /^["']?[\w-]+["']?:\s*(#.*)?$/.test(l));
+  if (root < 0) return undefined;
+  const blockEnd = (from: number, maxIndent: number) => {
+    let e = lines.findIndex((l, k) => k > from && l.trim() && !l.trimStart().startsWith('#') && l.length - l.trimStart().length <= maxIndent);
+    if (e < 0) e = lines.length;
+    while (e > from + 1 && !lines[e - 1].trim()) e--;
+    return e;
+  };
+  const [scope, leaf] = key.split('.');
+  const entry = `    ${leaf}: ${JSON.stringify(value)}`;
+  const sc = lines.findIndex((l, k) => k > root && l.startsWith(`  ${scope}:`) && !l.slice(scope.length + 3).trim());
+  if (sc >= 0 && sc < blockEnd(root, 0)) lines.splice(blockEnd(sc, 2), 0, entry);
+  else lines.splice(blockEnd(root, 0), 0, `  ${scope}:`, entry);
+  return lines.join(eol) + eol;
+}
+
+// ---------- inline variable ----------
+
+// Replaces the uses of a local that is assigned once with its value and removes the assignment.
+// shortcut: scope = the enclosing `def` (or the whole file); `a, b = ...` multi-assignments are not detected.
+function inlineVariable(lines: string[], i: number): Intention | undefined {
+  const m = /^(\s*)([a-z_]\w*)\s*=\s*(?![=~>])(.+?)\s*$/.exec(lines[i]);
+  if (!m || /\s#|[[({,\\|&+*-]$|\bdo$|<<[~-]?\w/.test(m[3])) return undefined;
+  const [, ind, name, value] = m;
+  let from = 0, to = lines.length;
+  for (let k = i - 1; k >= 0; k--) {
+    const d = /^(\s*)def\b/.exec(lines[k]);
+    const b = d && d[1].length < ind.length ? blockAt(lines, k) : undefined;
+    if (b && b.endIdx > i) { from = k + 1; to = b.endIdx; break; }
+  }
+  const scope = lines.slice(from, to).join('\n');
+  const assigns = scope.match(new RegExp(`(?<![\\w.@$:])${name}\\s*(?:\\|\\||&&|\\*\\*|<<|>>|[-+*/%|&^])?=(?![=~>])`, 'g'))?.length ?? 0;
+  if (assigns !== 1 || new RegExp(`\\|[^|\\n]*\\b${name}\\b[^|\\n]*\\|`).test(scope)) return undefined;
+  const wrapped = /^(?:[\w.@:]+(?:\([^()]*\))?|"[^"#]*"|'[^']*'|\[[^\]]*\]|\{[^}]*\})$/.test(value) ? value : `(${value})`;
+  const edits: TextEdit[] = [];
+  for (let k = Math.max(i + 1, from); k < to; k++) {
+    for (const u of lines[k].matchAll(ident(name))) {
+      const before = lines[k].slice(0, u.index);
+      const inStr = (before.split('"').length - 1) % 2 === 1 || (before.split("'").length - 1) % 2 === 1;
+      if (inStr && before.lastIndexOf('#{') <= before.lastIndexOf('}')) continue;
+      edits.push({ range: [k + 1, u.index! + 1, k + 1, u.index! + name.length + 1], text: wrapped });
+    }
+  }
+  if (!edits.length) return undefined;
+  const drop: TextEdit = i + 1 < lines.length ? { range: [i + 1, 1, i + 2, 1], text: '' } : { range: [i + 1, 1, i + 1, lines[i].length + 1], text: '' };
+  return { title: `Embutir a variável ${name}`, edits: [drop, ...edits] };
+}
+
 // ---------- generation ----------
 
 function classAt(lines: string[], i: number): { start: number; end: number; ind: string } | undefined {
@@ -272,13 +414,14 @@ function introduceLet(lines: string[], i: number): Intention | undefined {
   }
 }
 
-export function intentionsAt(lines: string[], sel: Sel, opts: { spec?: boolean } = {}): Intention[] {
+export function intentionsAt(lines: string[], sel: Sel, opts: { spec?: boolean; i18nKeys?: string[] } = {}): Intention[] {
   const i = sel.sl - 1;
   if (i < 0 || i >= lines.length) return [];
   const found: (Intention | undefined)[] = [
     braceToDoEnd(lines, i), doEndToBrace(lines, i), hashRocketToColon(lines, i), colonToHashRocket(lines, i), sortHash(lines, i),
     ifElseToTernary(lines, i), ternaryToIf(lines, i), modifierToStatement(lines, i), statementToModifier(lines, i),
-    invertIf(lines, i), mergeNestedIf(lines, i), splitIf(lines, i),
+    invertIf(lines, i), mergeNestedIf(lines, i), mergeSequentialIf(lines, i), splitIf(lines, i),
+    namedToNumbered(lines, i), numberedToNamed(lines, i), inlineVariable(lines, i), stringToI18n(lines, i, sel.sc, opts.i18nKeys),
     stringSymbol(lines, i, sel.sc), toInterpolation(lines, i, sel.sc), squigglyHeredoc(lines, i), numberUnderscores(lines, i, sel.sc),
     opts.spec ? introduceLet(lines, i) : undefined,
   ];
@@ -286,13 +429,30 @@ export function intentionsAt(lines: string[], sel: Sel, opts: { spec?: boolean }
 }
 
 // The only Monaco-facing part: offers the intentions in the Ctrl+. menu next to the Ruby LSP's code actions.
+// "Move to i18n" also writes the locale file (config/locales/pt-BR.yml, else en.yml, else the first one) through a command.
+async function localeFile() {
+  const { ws } = await import('./dom.ts');
+  const all = ws.files.filter(f => /[\\/]config[\\/]locales[\\/][^\\/]+\.ya?ml$/.test(f));
+  return ['pt-BR.yml', 'en.yml'].map(n => all.find(f => /[\\/]/.test(f.slice(-n.length - 1, -n.length)) && f.endsWith(n))).find(Boolean) ?? all[0];
+}
+
 export function registerIntentions(enabled: (feature: 'intentions' | 'generate') => boolean) {
+  monaco.editor.registerCommand('rubaxe.i18nAdd', async (_acc, file: string, key: string, value: string) => {
+    const { api, notify } = await import('./dom.ts');
+    const next = addLocaleKey(await api.readFile(file), key, value);
+    if (next === undefined) notify('Não achei a chave raiz no arquivo de i18n; adicione ' + key + ' manualmente.', 'error');
+    else await api.writeFile(file, next);
+  });
   monaco.languages.registerCodeActionProvider('ruby', {
-    provideCodeActions(model, r) {
-      const all = intentionsAt(model.getLinesContent(), { sl: r.startLineNumber, sc: r.startColumn, el: r.endLineNumber, ec: r.endColumn }, { spec: /_spec\.rb$/.test(model.uri.path) });
+    async provideCodeActions(model, r) {
+      const file = await localeFile();
+      const { api } = await import('./dom.ts');
+      const i18nKeys = file ? localeKeys(await api.readFile(file).catch(() => '')) : undefined;
+      const all = intentionsAt(model.getLinesContent(), { sl: r.startLineNumber, sc: r.startColumn, el: r.endLineNumber, ec: r.endColumn }, { spec: /_spec\.rb$/.test(model.uri.path), i18nKeys });
       const actions = all.filter(x => enabled(/^(Gerar|Introduzir)/.test(x.title) ? 'generate' : 'intentions')).map(x => ({
         title: x.title, kind: 'refactor.rewrite',
         edit: { edits: x.edits.map(e => ({ resource: model.uri, versionId: model.getVersionId(), textEdit: { range: new monaco.Range(...e.range), text: e.text } })) },
+        command: x.i18n && file ? { id: 'rubaxe.i18nAdd', title: x.title, arguments: [file, x.i18n.key, x.i18n.value] } : undefined,
       }));
       return { actions, dispose() {} };
     },

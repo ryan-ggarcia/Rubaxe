@@ -6,6 +6,16 @@ import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
 import { ipcMessage } from './paths.ts';
+import { quickPick } from './quick-input.ts';
+
+type Profile = { name: string; path: string; args: string[] };
+const PROFILE_ICONS: [RegExp, string][] = [[/powershell/i, 'terminal-powershell'], [/prompt|cmd/i, 'terminal-cmd'], [/bash/i, 'terminal-bash'], [/wsl|linux|ubuntu/i, 'terminal-linux']];
+
+// Lists the installed shells; the pick runs with the chosen profile.
+export async function pickProfile(placeholder: string, run: (p: Profile) => void) {
+  const shells = await api.listShells();
+  quickPick({ placeholder, items: () => shells.map(p => ({ label: p.name, description: p.path, icon: PROFILE_ICONS.find(([re]) => re.test(p.name))?.[1] ?? 'terminal', run: () => run(p) })) });
+}
 
 interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string }
 
@@ -17,6 +27,13 @@ function allowed(feature: string) {
   return Features.on(feature);
 }
 
+const DARK = { background: '#181818', foreground: '#CCCCCC', cursor: '#AEAFAD', selectionBackground: '#6B2420' };
+// White/yellow ANSI colors are unreadable on a light background.
+const LIGHT = { background: '#F3F3F3', foreground: '#3B3B3B', cursor: '#3B3B3B', selectionBackground: '#F6D5D2', white: '#555555', brightWhite: '#1F1F1F', yellow: '#795E26', brightYellow: '#8A6A00',
+  cyan: '#0E6F7E', brightCyan: '#0E6F7E', green: '#1E7B45', brightGreen: '#1E7B45', magenta: '#A3199B', brightMagenta: '#A3199B' };
+const xtermTheme = () => document.documentElement.dataset.theme === 'light' ? LIGHT : DARK;
+export const applyTheme = () => terms.forEach(t => { t.xterm.options.theme = xtermTheme(); });
+
 const terms: Term[] = [];
 let active: Term | undefined;
 let seq = 0;
@@ -26,23 +43,26 @@ function select(t: Term | undefined) {
   for (const x of terms) x.el.hidden = x !== t;
   const pick = $('#terminal-select') as HTMLSelectElement;
   pick.replaceChildren(...terms.map(x => h('option', { value: x.id, selected: x === t }, `${x.title}${x.alive ? '' : ' (encerrado)'}`)));
-  if (t) requestAnimationFrame(() => { t.fit.fit(); t.xterm.focus(); });
+  if (t) { t.xterm.focus(); requestAnimationFrame(() => t.fit.fit()); } // focus now: rAF is throttled while the window is not visible
 }
 
 // Undefined when the terminal (or console) feature is switched off.
-export async function create(title = 'terminal', command?: string, isConsole = false): Promise<Term | undefined> {
+// `profile` overrides the default shell (setting terminal.shell: a profile name, or a path as before).
+export async function create(title?: string, command?: string, isConsole = false, profile?: Profile): Promise<Term | undefined> {
   if (!allowed(isConsole ? 'console' : 'terminal')) return;
   Panel.show('terminal');
   const el = h('div', { className: 'term' });
   $('#terminal-host').append(el);
   const xterm = new Terminal({
     fontFamily: "Consolas, 'Courier New', monospace", fontSize: 13, cursorBlink: true, scrollback: 5000,
-    theme: { background: '#181818', foreground: '#CCCCCC', cursor: '#AEAFAD', selectionBackground: '#264F78' },
+    theme: xtermTheme(),
   });
   const fit = new FitAddon();
   xterm.loadAddon(fit);
   xterm.open(el);
-  const t: Term = { id: String(++seq), title, xterm, fit, el, alive: true, console: isConsole, tail: '' };
+  const chosen = Features.get<string>('terminal.shell');
+  const p = profile ?? (chosen ? (await api.listShells().catch(() => [])).find(s => s.name === chosen) ?? { name: chosen, path: chosen, args: [] } : undefined);
+  const t: Term = { id: String(++seq), title: title ?? p?.name ?? 'terminal', xterm, fit, el, alive: true, console: isConsole, tail: '' };
   terms.push(t);
   select(t);
   fit.fit();
@@ -55,7 +75,7 @@ export async function create(title = 'terminal', command?: string, isConsole = f
   xterm.onData(d => api.ptyWrite(t.id, d));
   xterm.onResize(({ cols, rows }) => api.ptyResize(t.id, cols, rows));
   try {
-    await api.ptySpawn(t.id, ws.root, xterm.cols, xterm.rows, Features.get<string>('terminal.shell'));
+    await api.ptySpawn(t.id, ws.root, xterm.cols, xterm.rows, p?.path ?? '', p?.args);
   } catch (e) {
     t.alive = false;
     xterm.write(`\r\nNão foi possível abrir o terminal: ${ipcMessage(e)}\r\n`);
@@ -104,6 +124,7 @@ export function initTerminal() {
   const pick = $('#terminal-select') as HTMLSelectElement;
   pick.onchange = () => select(terms.find(t => t.id === pick.value));
   $('#terminal-new').onclick = () => void create();
+  $('#terminal-profiles').onclick = () => void pickProfile('Novo terminal com o perfil...', p => void create(p.name, undefined, false, p));
   $('#terminal-kill').onclick = () => kill();
   new ResizeObserver(() => { if (active && !active.el.hidden && active.el.offsetParent) active.fit.fit(); }).observe($('#terminal-host'));
   api.onPtyData((id, data) => {

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { watch, type FSWatcher } from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
 import type { IPty } from 'node-pty';
 import { createParser, frame } from './lsp.ts';
 import { quote } from './shell.ts';
+import { watchIgnored } from './watch.ts';
 import type { SearchHit } from './preload.ts';
 
 const IGNORED = new Set(['.git', 'node_modules', 'tmp', 'log', '.bundle', 'coverage', '.ruby-lsp', 'vendor']);
@@ -18,6 +20,7 @@ let allowClose = false;
 const runs = new Map<string, ChildProcess>();
 let debug: { proc?: ChildProcess; sock?: net.Socket } = {};
 const ptys = new Map<string, IPty>();
+let watcher: FSWatcher | undefined;
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...args); };
 
@@ -34,6 +37,10 @@ function childEnv(extra: Record<string, string> = {}): Record<string, string> {
   if (rubyBin) env[key] = rubyBin + path.delimiter + (env[key] ?? '');
   return env;
 }
+
+// Packaged builds unpack src/ruby next to app.asar (see build.asarUnpack): ruby itself cannot read inside the archive.
+const rubyHelpers = path.join(__dirname, '..', 'src', 'ruby').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+const syncOutput = { RUBYOPT: '-rrubaxe_sync', RUBYLIB: rubyHelpers };
 
 const shellSpawn = (cmd: string, args: string[], cwd: string, extra: Record<string, string> = {}) =>
   // detached on Linux/macOS: the shell leads its own process group, so kill() can reach ruby underneath it.
@@ -63,6 +70,64 @@ async function findRubies(): Promise<{ path: string; manager: string }[]> {
     if (real && !seen.has(real.toLowerCase())) { seen.add(real.toLowerCase()); out.push(r); }
   }
   return out;
+}
+
+const exists = (p: string) => fs.access(p).then(() => true, () => false);
+const pathDirs = () => (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+const firstExisting = async (ps: string[]) => { for (const p of ps) if (await exists(p)) return p; };
+
+// Terminal profiles that exist on this machine, default first.
+async function listShells(): Promise<{ name: string; path: string; args: string[] }[]> {
+  const out: { name: string; path: string; args: string[] }[] = [];
+  const add = async (name: string, candidates: string[], args: string[] = []) => {
+    const p = await firstExisting(candidates);
+    if (p) out.push({ name, path: p, args });
+  };
+  if (process.platform === 'win32') {
+    const sys32 = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+    const git = await firstExisting(pathDirs().map(d => path.join(d, 'git.exe')));
+    await add('PowerShell', [path.join(sys32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')]);
+    await add('PowerShell 7', [...pathDirs().map(d => path.join(d, 'pwsh.exe')), 'C:\\Program Files\\PowerShell\\7\\pwsh.exe']);
+    await add('Prompt de Comando', [process.env.ComSpec ?? path.join(sys32, 'cmd.exe')]);
+    // git.exe lives in <Git>\cmd or <Git>\mingw64\bin; bash.exe in <Git>\bin.
+    const fromGit = git ? [path.join(git, '..', '..', 'bin', 'bash.exe'), path.join(git, '..', '..', '..', 'bin', 'bash.exe')] : [];
+    await add('Git Bash', ['C:\\Program Files\\Git\\bin\\bash.exe', ...fromGit], ['--login', '-i']);
+    await add('WSL', [path.join(sys32, 'wsl.exe')]);
+    return out;
+  }
+  const listed = (await fs.readFile('/etc/shells', 'utf8').catch(() => '')).split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
+  const seen = new Set<string>();
+  for (const p of [process.env.SHELL ?? '', ...listed]) {
+    const real = p && await fs.realpath(p).catch(() => '');
+    if (real && !seen.has(real)) { seen.add(real); out.push({ name: path.basename(p), path: p, args: [] }); }
+  }
+  return out;
+}
+
+function watchFolder(root: string) {
+  watcher?.close();
+  watcher = undefined;
+  if (!root) return;
+  const pending = new Set<string>();
+  let timer: NodeJS.Timeout | undefined;
+  const stop = (e: Error) => { console.error(`watcher ${root}: ${e.message}`); clearTimeout(timer); w?.close(); if (watcher === w) watcher = undefined; };
+  let w: FSWatcher | undefined;
+  try {
+    w = watcher = watch(root, { recursive: true }, (_ev, name) => {
+      if (!name) return;
+      // Windows reports a deleted root as its own absolute path, endlessly and without an error event.
+      if (path.isAbsolute(name)) { send('fsChange', [root]); return stop(new Error('pasta removida')); }
+      if (watchIgnored(name)) return;
+      pending.add(path.join(root, name));
+      // Batch window from the first event: a plain debounce would never fire while a build keeps writing.
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        if (watcher === w) send('fsChange', [...pending]);
+        pending.clear();
+      }, 300);
+    });
+  } catch (e) { return stop(e as Error); } // root missing or unreadable
+  w.on('error', stop); // root deleted, EPERM...
 }
 
 function kill(child: ChildProcess) {
@@ -148,7 +213,7 @@ ipcMain.handle('debugLaunch', async (_e, cmd: string, args: string[], cwd: strin
   debugStop();
   const port = await freePort();
   // -c runs any command (ruby, bundle exec rspec...) with the debugger loaded through RUBYOPT.
-  const proc = shellSpawn('rdbg', ['--open', '--host=127.0.0.1', `--port=${port}`, '-c', '--', cmd, ...args], cwd);
+  const proc = shellSpawn('rdbg', ['--open', '--host=127.0.0.1', `--port=${port}`, '-c', '--', cmd, ...args], cwd, syncOutput);
   debug = { proc };
   let attached = false;
   const out = (d: Buffer) => {
@@ -166,10 +231,11 @@ ipcMain.handle('debugStop', () => debugStop());
 ipcMain.on('dapSend', (_e, msg: unknown) => { debug.sock?.write(frame(msg)); });
 
 // Terminal: real pseudo-terminals (ConPTY on Windows) so shells, irb and rails console behave interactively.
-ipcMain.handle('ptySpawn', async (_e, id: string, cwd: string, cols: number, rows: number, shellPath: string) => {
+ipcMain.handle('ptySpawn', async (_e, id: string, cwd: string, cols: number, rows: number, shellPath: string, args?: string[]) => {
   const pty = await import('node-pty'); // native module: loaded only when the first terminal opens
   const file = shellPath || (process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash');
-  const p = pty.spawn(file, [], { name: 'xterm-256color', cols, rows, cwd: cwd || os.homedir(), env: childEnv() });
+  // CHERE_INVOKING: Git Bash --login would otherwise cd to HOME.
+  const p = pty.spawn(file, args ?? [], { name: 'xterm-256color', cols, rows, cwd: cwd || os.homedir(), env: childEnv({ CHERE_INVOKING: '1' }) });
   ptys.set(id, p);
   p.onData(d => send('ptyData', id, d));
   p.onExit(({ exitCode }) => { ptys.delete(id); send('ptyExit', id, exitCode); });
@@ -177,6 +243,8 @@ ipcMain.handle('ptySpawn', async (_e, id: string, cwd: string, cols: number, row
 ipcMain.on('ptyWrite', (_e, id: string, data: string) => ptys.get(id)?.write(data));
 ipcMain.on('ptyResize', (_e, id: string, cols: number, rows: number) => { if (cols > 0 && rows > 0) ptys.get(id)?.resize(cols, rows); });
 ipcMain.handle('ptyKill', (_e, id: string) => ptys.get(id)?.kill());
+ipcMain.handle('listShells', () => listShells());
+ipcMain.handle('watchFolder', (_e, root: string) => watchFolder(root));
 
 ipcMain.handle('openFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
@@ -208,20 +276,27 @@ ipcMain.handle('renamePath', async (_e, from: string, to: string) => {
 });
 // Trash instead of rm so a mistaken delete can be undone from the OS.
 ipcMain.handle('trashPath', (_e, p: string) => shell.trashItem(p));
-ipcMain.handle('exists', (_e, p: string) => fs.access(p).then(() => true, () => false));
+ipcMain.handle('exists', (_e, p: string) => exists(p));
 ipcMain.handle('listFiles', (_e, root: string) => walk(root));
 ipcMain.handle('search', (_e, root: string, query: string, opts) => search(root, query, opts));
-ipcMain.handle('exec', (_e, cmd: string, args: string[], cwd: string) => new Promise(resolve => {
-  const c = shellSpawn(cmd, args, cwd);
-  let out = '';
-  c.stdout!.on('data', d => out += d);
-  c.stderr!.on('data', d => out += d);
-  c.on('error', e => resolve({ code: -1, out: e.message }));
-  c.on('close', code => resolve({ code, out }));
-}));
+ipcMain.handle('exec', async (_e, cmd: string, args: string[], cwd: string) => {
+  // A missing cwd makes spawn blame the shell ("cmd.exe ENOENT").
+  if (!await fs.stat(cwd).then(s => s.isDirectory(), () => false)) return { code: -1, out: `Pasta não encontrada: ${cwd}` };
+  return new Promise(resolve => {
+    // No TTY to answer a credential prompt: git would wait forever.
+    const c = shellSpawn(cmd, args, cwd, cmd === 'git' ? { GIT_TERMINAL_PROMPT: '0' } : {});
+    let out = '';
+    c.stdout!.on('data', d => out += d);
+    c.stderr!.on('data', d => out += d);
+    c.on('error', e => resolve({ code: -1, out: e.message }));
+    c.on('close', code => resolve({ code, out }));
+  });
+});
 ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string, env?: Record<string, string>) => {
-  const c = shellSpawn(cmd, args, cwd, env);
+  // Tests and the profiler pass env: rspec/minitest sync their own output, and sync writes would skew profiles.
+  const c = shellSpawn(cmd, args, cwd, env ?? syncOutput);
   runs.set(id, c);
+  c.stdin!.on('error', e => send('runData', id, e.message + '\n')); // EPIPE when writing after the program ended
   c.stdout!.on('data', d => send('runData', id, d.toString()));
   c.stderr!.on('data', d => send('runData', id, d.toString()));
   c.on('error', e => send('runData', id, e.message + '\n'));
@@ -229,10 +304,10 @@ ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string,
 });
 // Fresh directory per run for test reports, coverage and profiles.
 ipcMain.handle('mkTemp', () => fs.mkdtemp(path.join(os.tmpdir(), 'rubaxe-')));
-// Packaged builds unpack src/ruby next to app.asar (see build.asarUnpack): ruby itself cannot read inside the archive.
-ipcMain.handle('rubyHelpers', () => path.join(__dirname, '..', 'src', 'ruby').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`));
+ipcMain.handle('rubyHelpers', () => rubyHelpers);
 ipcMain.handle('findRubies', () => findRubies());
 ipcMain.handle('setRubyBin', (_e, dir: string) => { rubyBin = dir; });
+ipcMain.on('runWrite', (_e, id: string, data: string) => runs.get(id)?.stdin?.write(data));
 ipcMain.handle('stop', (_e, id: string) => { const c = runs.get(id); if (c) kill(c); });
 // A truncated settings file must not block startup.
 ipcMain.handle('loadSettings', () => fs.readFile(settingsPath(), 'utf8').then(JSON.parse).catch(() => ({})));
@@ -240,9 +315,15 @@ ipcMain.handle('saveSettings', (_e, s: unknown) => fs.writeFile(settingsPath(), 
 ipcMain.handle('lspStart', (_e, cmd: string, cwd: string) => startLsp(cmd, cwd));
 ipcMain.handle('lspStop', () => stopLsp());
 ipcMain.on('lspSend', (_e, msg: unknown) => { lsp?.stdin?.write(frame(msg)); });
+const hex = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+// macOS has no titleBarOverlay (traffic lights instead).
+ipcMain.on('setTitleBarOverlay', (_e, color: unknown, symbolColor: unknown) => {
+  if (process.platform !== 'darwin' && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: 35 });
+});
 
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
+  // Windows/Linux use the HTML menu bar; macOS needs a native menu or Cmd+C/V/X/A and Cmd+Q stop working.
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
   win = new BrowserWindow({
     width: 1400, height: 900, backgroundColor: '#1F1F1F', title: 'Rubaxe',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'), // the logo's mark without the wordmark
@@ -278,5 +359,6 @@ app.on('window-all-closed', () => {
   debugStop();
   ptys.forEach(p => p.kill());
   runs.forEach(kill);
+  watcher?.close();
   app.quit();
 });

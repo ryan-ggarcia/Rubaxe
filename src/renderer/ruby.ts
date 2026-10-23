@@ -5,8 +5,8 @@ import * as Editor from './editor.ts';
 import { refreshWorkspace } from './explorer.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
-import { fuzzyScore, implCandidates, isTest, minitestNameAt, parseRakeTasks, relativeTo, testCandidates, type TestResult } from './paths.ts';
-import { quickPick } from './quick-input.ts';
+import { fuzzyScore, implCandidates, isTest, minitestNameAt, parseInspections, parseRakeTasks, relativeTo, specDirs, rspecFolderArgs, testCandidates, testTarget, type Inspection, type TestResult } from './paths.ts';
+import { prompt, quickPick } from './quick-input.ts';
 import * as Tests from './tests.ts';
 
 let runSeq = 0;
@@ -23,7 +23,7 @@ api.onRunExit((id, code) => {
   onExit.get(id)?.(code);
   onExit.delete(id);
   Panel.append(`\n[${code === 0 ? 'concluído' : `encerrado com código ${code}`}]\n`);
-  Panel.setRunning(running.size > 0);
+  Panel.setRunning(running.size > 0, running.has(String(runSeq)) ? String(runSeq) : undefined);
 });
 
 function enabled(feature: string) {
@@ -33,14 +33,14 @@ function enabled(feature: string) {
   return false;
 }
 
-export function runCommand(cmd: string, args: string[], opts: { env?: Record<string, string>; onExit?: (code: number | null) => void } = {}) {
+export function runCommand(cmd: string, args: string[], opts: { env?: Record<string, string>; cwd?: string; onExit?: (code: number | null) => void } = {}) {
   const id = String(++runSeq);
   running.add(id);
   if (opts.onExit) onExit.set(id, opts.onExit);
   Panel.show('output');
   Panel.append(`\n> ${[cmd, ...args].join(' ')}\n`);
-  Panel.setRunning(true);
-  void api.run(id, cmd, args, ws.root, opts.env);
+  Panel.setRunning(true, id);
+  void api.run(id, cmd, args, opts.cwd ?? ws.root, opts.env);
 }
 
 export const stopAll = () => running.forEach(id => api.stop(id));
@@ -91,7 +91,7 @@ export async function runTests(atLine: boolean | number = false, run: Run = Test
 export async function rerun(list: TestResult[], run: Run = Tests.run) {
   const specs = list.filter(r => framework(r.file) === 'rspec');
   const units = list.filter(r => framework(r.file) !== 'rspec');
-  if (specs.length) run(...withBundle('rspec', specs.map(r => `${r.file}:${r.line}`)), 'rspec');
+  if (specs.length) run(...withBundle('rspec', specs.map(testTarget)), 'rspec');
   if (!units.length) return;
   if (await api.exists(abs('bin/rails'))) return run(ruby(), ['bin/rails', 'test', ...units.map(r => `${r.file}:${r.line}`)], 'minitest');
   const files = [...new Set(units.map(r => r.file))];
@@ -134,6 +134,33 @@ export function bundle(sub: string) {
   if (enabled('bundler')) runCommand('bundle', [sub]);
 }
 
+export async function runSpecFolder() {
+  if (!enabled('runTests')) return;
+  const dirs = specDirs(ws.files, ws.root);
+  if (!dirs.length) return notify('Nenhum arquivo *_spec.rb neste projeto.');
+  quickPick({
+    placeholder: 'RSpec: escolha a pasta de specs',
+    items: q => dirs.filter(d => fuzzyScore(q, d) >= 0).map(d => ({
+      label: d, icon: 'folder',
+      run: async () => {
+        const filter = await prompt('Filtro pelo nome do exemplo (-e), opcional; Enter executa tudo', '');
+        if (filter !== undefined) void Tests.run(...withBundle('rspec', rspecFolderArgs(d, filter)), 'rspec');
+      },
+    })),
+  });
+}
+
+export function bundleInit() {
+  if (enabled('bundler')) runCommand('bundle', ['init']);
+}
+
+// Runs in the parent folder, so the new gem becomes a sibling of the open project.
+export async function bundleGem() {
+  if (!enabled('bundler')) return;
+  const name = await prompt('Nome da nova gem (criada ao lado da pasta aberta)');
+  if (name) runCommand('bundle', ['gem', name], { cwd: dirOf(ws.root) });
+}
+
 export async function rakeTasks() {
   if (!enabled('rake')) return;
   notify('Carregando tarefas Rake…');
@@ -160,7 +187,7 @@ export async function interpreterInfo(): Promise<{ text: string; tooltip: string
 // ---------- interpreters, gems, code style ----------
 
 const isPath = (p: string) => /[\\/]/.test(p);
-const dirOf = (p: string) => p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')));
+export const dirOf = (p: string) => p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')));
 
 // A chosen interpreter path also decides which bundle/rake/rspec/ruby-lsp run: its bin dir goes first on PATH.
 export const applyRubyBin = () => api.setRubyBin(isPath(ruby()) ? dirOf(ruby()) : '');
@@ -215,6 +242,7 @@ async function browseGem(name: string, dir: string) {
 
 export async function writeCodeStyle(onWritten: () => void) {
   if (!ws.root) return notify('Abra uma pasta primeiro (Ctrl+O).');
+  if (Features.get('rubocop.config') !== 'Rubaxe') return notify('A configuração do RuboCop está em "projeto": o Rubaxe não altera esses arquivos. Mude em Configurações.');
   const file = '.rubocop_rubaxe.yml';
   await api.writeFile(abs(file), rubocopStyle(Features.get));
   const main = abs('.rubocop.yml');
@@ -224,6 +252,34 @@ export async function writeCodeStyle(onWritten: () => void) {
   else if (merged !== existing) await api.writeFile(main, merged);
   notify(`Estilo gravado em ${file}. Formatar (Shift+Alt+F) aplica as regras via RuboCop.`);
   onWritten();
+}
+
+// Own inspections (rubaxe_inspect.rb, run on the file on disk): on open and after every save.
+async function inspect(model: import('monaco-editor').editor.ITextModel) {
+  if (model.isDisposed() || model.uri.scheme !== 'file' || model.getLanguageId() !== 'ruby') return;
+  let list: Inspection[] = [];
+  if (Features.on('inspections')) {
+    const r = await api.exec(ruby(), ['--disable-gems', `${await api.rubyHelpers()}${ws.sep}rubaxe_inspect.rb`, model.uri.fsPath], ws.root || '.').catch(() => undefined);
+    list = r ? parseInspections(r.out) : [];
+  }
+  if (model.isDisposed()) return;
+  const sev = { warning: monaco.MarkerSeverity.Warning, info: monaco.MarkerSeverity.Info };
+  monaco.editor.setModelMarkers(model, 'rubaxe-inspect', list.map(i => ({
+    startLineNumber: i.line, startColumn: i.column, endLineNumber: i.endLine, endColumn: i.endColumn,
+    severity: sev[i.severity] ?? sev.info, message: i.message, source: 'Rubaxe', code: i.rule,
+  })));
+}
+
+export function inspectAll() {
+  monaco.editor.getModels().forEach(m => void inspect(m));
+}
+
+export function initInspect() {
+  monaco.editor.onDidCreateModel(m => {
+    void inspect(m);
+    m.onWillDispose(() => monaco.editor.setModelMarkers(m, 'rubaxe-inspect', []));
+  });
+  Editor.onDidSave(path => { const m = monaco.editor.getModel(monaco.Uri.file(path)); if (m) void inspect(m); });
 }
 
 export function steepCheck() {

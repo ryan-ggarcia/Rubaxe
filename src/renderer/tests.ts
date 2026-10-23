@@ -28,6 +28,7 @@ export async function run(cmd: string, args: string[], fw: Framework) {
   const lib = await helperDir();
   const rubyopt: string[] = [];
   const env: Record<string, string> = {};
+  if (fw === 'rspec' && Features.get<boolean>('rspec.fullBacktrace')) args = [...args, '-b'];
   if (fw === 'rspec') args = [...args, '--format', 'progress', '--format', 'json', '--out', report];
   else { rubyopt.push('-rrubaxe_minitest'); env.RUBAXE_TEST_REPORT = report; }
   const cov = withCoverage;
@@ -35,7 +36,7 @@ export async function run(cmd: string, args: string[], fw: Framework) {
   if (cov) { rubyopt.push('-rrubaxe_coverage'); env.RUBAXE_COVERAGE = dir; }
   if (rubyopt.length) Object.assign(env, { RUBYOPT: rubyopt.join(' '), RUBYLIB: lib });
   const targets = args.filter(a => /_(spec|test)\.rb(:\d+)?$/.test(a));
-  const partial = args.some(a => /:\d+$/.test(a)) || args.includes('-n');
+  const partial = args.some(a => /:\d+$|\[[\d:]+\]$/.test(a)) || args.includes('-n') || args.includes('-e');
   Ruby.runCommand(cmd, args, { env, onExit: () => void finish(report, dir, cov, targets.length === 0 && !partial, partial) });
 }
 
@@ -165,6 +166,7 @@ function renderTree() {
         h('span', { className: 'desc' }, r.time !== undefined ? `${Math.round(r.time * 1000)} ms` : ''));
       row.title = r.message ? `${r.name}\n\n${r.message}` : r.name;
       row.onclick = () => void Editor.openFile(abs(r.file), { lineNumber: r.line, column: 1 });
+      if (r.id) { const play = icon('run', 'Executar este exemplo'); play.onclick = e => { e.stopPropagation(); void Ruby.rerun([r]); }; row.append(play); }
       rows.push(row);
       if (r.status === 'failed' && r.message) rows.push(h('div', { className: 'test-message' }, r.message));
     }

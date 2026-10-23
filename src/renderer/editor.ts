@@ -6,6 +6,7 @@ import * as Lsp from './lsp-client.ts';
 import { ipcMessage, languageFor } from './paths.ts';
 
 export interface Tab {
+  conflict?: string; // disk text that differs from this dirty tab (outside edit not yet decided on)
   key: string;
   kind: 'file' | 'settings' | 'diff';
   title: string;
@@ -54,6 +55,7 @@ export function createEditor(settingsRenderer: (container: HTMLElement) => void)
   });
   monaco.editor.registerEditorOpener({ openCodeEditor: (_source, resource, selection) => { void openUri(resource, selection); return true; } });
   // Rename and quick-fixes can edit files without a tab: give them one so the change can be seen and saved.
+  editor.onDidBlurEditorText(() => autoSave(active));
   monaco.editor.onDidCreateModel(model => model.onDidChangeContent(() => { if (model.uri.scheme === 'file' && !tabFor(model)) adopt(model); }));
 }
 
@@ -93,7 +95,7 @@ function adopt(model: M.editor.ITextModel): Tab {
     saved: loadedVersion.get(model) ?? model.getAlternativeVersionId(), disk: loadedText.get(model),
   };
   tab.dirty = tab.saved !== model.getAlternativeVersionId();
-  model.onDidChangeContent(() => updateDirty(tab));
+  model.onDidChangeContent(() => { updateDirty(tab); autoSaveSoon(tab); });
   tabs.push(tab);
   Lsp.didOpen(model);
   fire();
@@ -103,6 +105,18 @@ function adopt(model: M.editor.ITextModel): Tab {
 function updateDirty(tab: Tab) {
   const dirty = tab.model!.getAlternativeVersionId() !== tab.saved;
   if (dirty !== tab.dirty) { tab.dirty = dirty; renderTabs(); }
+}
+
+// Auto save: 1 s after the last edit, and on blur / tab switch. Never formats (only an explicit save does).
+const autoTimers = new Map<Tab, ReturnType<typeof setTimeout>>();
+function autoSave(tab: Tab | undefined) {
+  if (!Features.get<boolean>('files.autoSave') || !tab?.dirty || tab.kind !== 'file' || !tabs.includes(tab) || tab.model?.isDisposed() || tab.model?.uri.scheme !== 'file') return;
+  clearTimeout(autoTimers.get(tab));
+  void save(tab, true);
+}
+function autoSaveSoon(tab: Tab) {
+  clearTimeout(autoTimers.get(tab));
+  autoTimers.set(tab, setTimeout(() => autoSave(tab), 1000));
 }
 
 export const openFile = (path: string, selection?: M.IRange | M.IPosition) => openUri(monaco.Uri.file(path), selection);
@@ -144,6 +158,7 @@ export function openDiff(key: string, title: string, path: string, original: str
 }
 
 export function activate(tab: Tab) {
+  if (active !== tab) autoSave(active);
   if (active?.model && active.model === editor.getModel()) active.view = editor.saveViewState();
   active = tab;
   const isFile = tab.kind === 'file';
@@ -198,10 +213,12 @@ export function closeAll(): boolean {
   return true;
 }
 
-export async function save(tab = active): Promise<boolean> {
+export async function save(tab = active, auto = false): Promise<boolean> {
   if (!tab?.model || !tab.path) return false;
   const model = tab.model;
-  if (Features.get<boolean>('editor.formatOnSave') && Features.on('formatting') && model.getLanguageId() === 'ruby' && editor.getModel() === model) {
+  // Auto save must not clobber an outside edit the user has not seen yet (syncFromDisk warns, the user decides).
+  if (auto && await api.readFile(tab.path).then(t => t !== tab.disk, () => false)) return false;
+  if (!auto && Features.get<boolean>('editor.formatOnSave') && Features.on('formatting') && model.getLanguageId() === 'ruby' && editor.getModel() === model) {
     await editor.getAction('editor.action.formatDocument')?.run();
   }
   const text = model.getValue();
@@ -213,6 +230,7 @@ export async function save(tab = active): Promise<boolean> {
   }
   tab.saved = model.getAlternativeVersionId();
   tab.disk = text;
+  tab.conflict = undefined;
   updateDirty(tab);
   Lsp.didSave(model);
   saveListeners.forEach(fn => fn(tab.path!));
@@ -220,20 +238,25 @@ export async function save(tab = active): Promise<boolean> {
 }
 
 // Picks up edits made outside Rubaxe (git checkout, rubocop -a, another editor) when the window regains focus.
-export async function syncFromDisk() {
+// `only` limits the check to those absolute paths (file watcher events).
+export async function syncFromDisk(only?: string[]) {
+  const fold = (p: string) => api.platform === 'win32' ? p.toLowerCase().replaceAll('/', '\\') : p;
+  const wanted = only && new Set(only.map(fold));
   for (const tab of [...tabs]) {
-    if (!tab.model || !tab.path) continue;
+    if (!tab.model || !tab.path || (wanted && !wanted.has(fold(tab.path)))) continue;
     const text = await api.readFile(tab.path).catch(() => undefined);
     if (text === undefined && tab.disk !== undefined && !tab.model.isDisposed() && !await api.exists(tab.path)) {
       tab.disk = undefined; // warn once; if the file comes back it differs from undefined and reloads
       notify(`${tab.title} foi apagado fora do Rubaxe. Salvar vai recriá-lo.`, 'error');
     }
     if (text === undefined || text === tab.disk || text.includes('\0') || tab.model.isDisposed()) continue;
-    tab.disk = text;
     if (tab.dirty) {
-      notify(`${tab.title} foi alterado fora do Rubaxe. Salvar vai sobrescrever essa versão.`, 'error');
+      // tab.disk stays the old text: that is what makes auto save (save(auto)) refuse to overwrite the outside edit; only Ctrl+S does.
+      if (tab.conflict !== text) notify(`${tab.title} foi alterado fora do Rubaxe. O salvamento automático foi suspenso; Ctrl+S sobrescreve essa versão.`, 'error');
+      tab.conflict = text;
       continue;
     }
+    tab.disk = text;
     // An edit (not setValue) keeps undo history, so the reload itself can be undone.
     tab.model.pushEditOperations([], [{ range: tab.model.getFullModelRange(), text }], () => null);
     tab.saved = tab.model.getAlternativeVersionId();

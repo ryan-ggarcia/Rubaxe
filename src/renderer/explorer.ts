@@ -24,7 +24,7 @@ export function initExplorer(openFolder: () => void) {
   $('#explorer-actions').replaceChildren(
     action('new-file', 'Novo arquivo', () => newEntry(false)),
     action('new-folder', 'Nova pasta', () => newEntry(true)),
-    action('refresh', 'Atualizar', () => renderExplorer()),
+    action('refresh', 'Atualizar', () => void refreshWorkspace()),
     action('collapse-all', 'Recolher tudo', () => { expanded.clear(); renderExplorer(); }),
   );
   $('#explorer-empty-open').onclick = openFolder;
@@ -106,15 +106,19 @@ const tabsUnder = (root: string) => Editor.tabs.filter(t => t.path && isUnder(t.
 
 async function renameEntry(from: string) {
   const name = await prompt(`Novo nome para ${basename(from)}`, basename(from));
-  if (!name || name === basename(from)) return;
+  if (name && name !== basename(from)) await moveEntry(from, parentOf(from) + ws.sep + name);
+}
+
+// Renames/moves a file or folder on disk and keeps tabs, expanded folders and the file index in step.
+export async function moveEntry(from: string, to: string): Promise<boolean> {
   // Monaco model URIs are fixed, so open tabs are closed and reopened; dirty ones would lose their edits.
   const affected = tabsUnder(from).sort((a, b) => Number(a === Editor.active) - Number(b === Editor.active));
-  if (affected.some(t => t.dirty)) return notify(`Salve os arquivos abertos de ${basename(from)} antes de renomear.`, 'error');
-  const to = parentOf(from) + ws.sep + name;
+  if (affected.some(t => t.dirty)) { notify(`Salve os arquivos abertos de ${basename(from)} antes de renomear.`, 'error'); return false; }
   try {
     await api.renamePath(from, to);
   } catch (e) {
-    return notify(`Não foi possível renomear ${basename(from)}: ${ipcMessage(e)}`, 'error');
+    notify(`Não foi possível renomear ${basename(from)}: ${ipcMessage(e)}`, 'error');
+    return false;
   }
   for (const p of [...expanded]) if (isUnder(p, from)) { expanded.delete(p); expanded.add(to + p.slice(from.length)); }
   selected = to;
@@ -123,6 +127,7 @@ async function renameEntry(from: string) {
   for (const p of reopen) await Editor.openFile(p);
   await refreshFiles();
   await renderExplorer();
+  return true;
 }
 
 // Re-lists the workspace and tells the Ruby LSP which files appeared or vanished, so its index stays right.
@@ -131,6 +136,16 @@ async function refreshFiles() {
   ws.files = await api.listFiles(ws.root);
   const after = new Set(ws.files);
   Lsp.filesChanged([...ws.files.filter(f => !before.has(f)).map(f => [f, 1] as const), ...[...before].filter(f => !after.has(f)).map(f => [f, 3] as const)]);
+}
+
+// Watcher batch: re-lists files when something appeared or vanished, redraws the folders that are on screen.
+export async function syncTree(paths: string[]) {
+  if (!ws.root) return;
+  const known = new Set(ws.files.map(fold));
+  let structural = false;
+  for (const p of paths) if (await api.exists(p) !== known.has(fold(p))) { structural = true; break; }
+  if (structural) await refreshFiles();
+  if (paths.some(p => fold(parentOf(p)) === fold(ws.root) || [...expanded].some(d => fold(d) === fold(parentOf(p))))) await renderExplorer();
 }
 
 // After commands that create files (generators): re-list, tell the LSP, redraw.

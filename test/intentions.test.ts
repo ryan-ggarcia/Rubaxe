@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { intentionsAt, applyEdits } from '../src/renderer/intentions.ts';
+import { intentionsAt, applyEdits, addLocaleKey, enterInBraceBlock } from '../src/renderer/intentions.ts';
 
 // Applies the intention whose title starts with `title` at line/col and returns the new text (undefined if not offered).
 function apply(src: string, line: number, title: string, col = 1, spec = false): string | undefined {
@@ -82,4 +82,51 @@ test('generate attr_* and initialize from @ivars used in the class', () => {
 test('RSpec introduce let moves the local before the example', () => {
   const src = 'describe User do\n  it "works" do\n    user = build(:user)\n    expect(user).to be_valid\n  end\nend';
   assert.strictEqual(apply(src, 3, 'Introduzir let', 1, true), 'describe User do\n  let(:user) { build(:user) }\n\n  it "works" do\n    expect(user).to be_valid\n  end\nend');
+});
+
+test('named <-> numbered block parameters', () => {
+  assert.strictEqual(apply('ids = users.map { |u| u.id }', 1, 'Usar it'), 'ids = users.map { it.id }');
+  assert.strictEqual(apply('h.each { |k, v| puts k, v }', 1, 'Usar parâmetros numerados'), 'h.each { puts _1, _2 }');
+  assert.strictEqual(apply('users.each do |u|\n  puts u.name\n  save(u)\nend', 1, 'Usar it'), 'users.each do\n  puts it.name\n  save(it)\nend');
+  assert.strictEqual(apply('h.each { |k, v| puts k }', 1, 'Usar parâmetros'), undefined); // v unused: arity would change
+  assert.strictEqual(apply('ids = users.map { it.id }', 1, 'Dar nomes'), 'ids = users.map { |item| item.id }');
+  assert.strictEqual(apply('h.each { puts _1, _2 }', 1, 'Dar nomes'), 'h.each { |item1, item2| puts item1, item2 }');
+  assert.strictEqual(apply('describe X do\n  it "works" do\n    expect(1).to eq 1\n  end\nend', 2, 'Dar nomes'), undefined);
+});
+
+test('move string to i18n picks a free key and carries the entry', () => {
+  const lines = ['flash[:notice] = "Salvo com sucesso"'];
+  const found = intentionsAt(lines, { sl: 1, sc: 20, el: 1, ec: 20 }, { i18nKeys: ['strings.salvo_com_sucesso'] }).find(x => x.title.startsWith('Mover'))!;
+  assert.deepStrictEqual(found.i18n, { key: 'strings.salvo_com_sucesso_2', value: 'Salvo com sucesso' });
+  assert.strictEqual(applyEdits(lines[0], found.edits), "flash[:notice] = t('strings.salvo_com_sucesso_2')");
+  assert.deepStrictEqual(intentionsAt(lines, { sl: 1, sc: 20, el: 1, ec: 20 }).filter(x => x.title.startsWith('Mover')), []); // no locale file
+  assert.deepStrictEqual(intentionsAt(['x = "oi #{a}"', 'require "json"'], { sl: 1, sc: 6, el: 1, ec: 6 }, { i18nKeys: [] }).filter(x => x.title.startsWith('Mover')), []);
+});
+
+test('addLocaleKey appends under the root, reusing the strings scope', () => {
+  assert.strictEqual(addLocaleKey('pt-BR:\n  hello: "oi"\n', 'strings.a', 'Olá'), 'pt-BR:\n  hello: "oi"\n  strings:\n    a: "Olá"\n');
+  assert.strictEqual(addLocaleKey('en:\n  strings:\n    x: "1"\n  other: 2\n', 'strings.a', 'A'), 'en:\n  strings:\n    x: "1"\n    a: "A"\n  other: 2\n');
+  assert.strictEqual(addLocaleKey('# nada\n', 'strings.a', 'A'), undefined);
+});
+
+test('inline variable replaces uses and removes the assignment', () => {
+  assert.strictEqual(apply('def f\n  total = a + b\n  puts total\n  g(total, "total")\nend', 2, 'Embutir'), 'def f\n  puts (a + b)\n  g((a + b), "total")\nend');
+  assert.strictEqual(apply('x = User.first\nputs x.name', 1, 'Embutir'), 'puts User.first.name');
+  assert.strictEqual(apply('x = 1\nx += 1\nputs x', 1, 'Embutir'), undefined); // assigned twice
+  assert.strictEqual(apply('x = 1\nputs 2', 1, 'Embutir'), undefined); // never used
+  assert.strictEqual(apply('def a\n  x = 1\n  x\nend\ndef b\n  x\nend', 2, 'Embutir'), 'def a\n  1\nend\ndef b\n  x\nend');
+});
+
+test('merge sequential ifs with the same body', () => {
+  assert.strictEqual(apply('if a\n  return 1\nend\nif b or c\n  return 1\nend', 1, 'Juntar ifs em sequência'), 'if a || (b or c)\n  return 1\nend');
+  assert.strictEqual(apply('if a\n  stop\nend\nif b\n  stop\nend', 1, 'Juntar ifs em sequência'), undefined); // would run once instead of twice
+  assert.strictEqual(apply('if a\n  stop\nend\nif b\n  go\nend', 1, 'Juntar ifs em sequência'), undefined);
+});
+
+test('Enter inside a one-line brace block expands it to do...end', () => {
+  const r = enterInBraceBlock(['items.each { |x| puts x }'], 1, 19)!;
+  assert.strictEqual(applyEdits('items.each { |x| puts x }', r.edits), 'items.each do |x|\n  puts x\nend');
+  assert.deepStrictEqual(r.cursor, [2, 9]);
+  assert.strictEqual(enterInBraceBlock(['items.each { |x| puts x }'], 1, 3), undefined);
+  assert.strictEqual(enterInBraceBlock(['opts = { a: 1 }'], 1, 12), undefined);
 });

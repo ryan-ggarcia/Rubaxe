@@ -13,6 +13,7 @@ export interface Hooks {
   ensureModel(uri: M.Uri): Promise<M.editor.ITextModel | null>;
   status(state: 'starting' | 'ready' | 'busy' | 'error' | 'off', detail?: string): void;
   log(text: string): void;
+  options?: object; // merged into initializationOptions (formatter/linters)
 }
 
 const COMPLETION_KINDS = ['Text', 'Method', 'Function', 'Constructor', 'Field', 'Variable', 'Class', 'Interface', 'Module', 'Property', 'Unit', 'Value', 'Enum', 'Keyword', 'Snippet', 'Color', 'File', 'Reference', 'Folder', 'EnumMember', 'Constant', 'Struct', 'Event', 'Operator', 'TypeParameter'] as const;
@@ -254,7 +255,7 @@ export async function start(root: string, command: string, h: Hooks) {
   try {
     init = await request('initialize', {
       processId: null, rootUri, workspaceFolders: [{ uri: rootUri, name: root.split(/[\\/]/).pop() }],
-      initializationOptions: { formatter: 'auto', featuresConfiguration: { inlayHint: { implicitRescue: true, implicitHashValue: true } } },
+      initializationOptions: { formatter: 'auto', ...h.options, featuresConfiguration: { inlayHint: { implicitRescue: true, implicitHashValue: true } } },
       capabilities: {
         window: { workDoneProgress: true },
         workspace: { workspaceFolders: true, applyEdit: true, configuration: true, symbol: {} },
@@ -397,6 +398,21 @@ export function didClose(model: M.editor.ITextModel) {
 
 export const isReady = () => ready;
 export const didSave = (model: M.editor.ITextModel) => { if (ready && opened.has(model.uri.toString())) notify('textDocument/didSave', { textDocument: doc(model) }); };
+// Rename through the server and apply its edits to the (tab-less) models; undefined = the server had no answer.
+export async function renameSymbol(model: M.editor.ITextModel, position: M.IPosition, newName: string): Promise<M.Uri[] | undefined> {
+  const r = await ask<LWorkspaceEdit>('rename', 'textDocument/rename', { textDocument: doc(model), position: pos(position), newName });
+  const { edits } = r ? await toWorkspaceEdit(r) : { edits: [] };
+  if (!edits.length) return;
+  const touched: M.Uri[] = [];
+  for (const list of Map.groupBy(edits, e => e.resource.toString()).values()) {
+    const m = monaco.editor.getModel(list[0].resource);
+    if (!m) return; // partial application would leave the project half renamed
+    m.applyEdits(list.map(e => ({ range: e.textEdit.range, text: e.textEdit.text })));
+    touched.push(m.uri);
+  }
+  return touched;
+}
+
 export const workspaceSymbols = (query: string) => ask<any[]>('workspaceSymbols', 'workspace/symbol', { query });
 export const documentSymbols = async (model: M.editor.ITextModel) => symbols(await ask('documentSymbols', 'textDocument/documentSymbol', { textDocument: doc(model) }));
 // Toggling the flag: pull fresh for open docs when on, clear markers when off.

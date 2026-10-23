@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -62,4 +62,50 @@ test('test reports from RSpec json and the Minitest reporter normalize to relati
 test('ipcMessage strips the Electron IPC prefix', () => {
   assert.strictEqual(ipcMessage(new Error("Error invoking remote method 'createPath': Error: EEXIST: já existe")), 'EEXIST: já existe');
   assert.strictEqual(ipcMessage(new Error('falhou')), 'falhou');
+});
+
+test('eventKey uses the physical key with Alt and for Backquote', () => {
+  const k = (o: object) => eventKey({ ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, key: '', code: '', ...o }, 'darwin');
+  assert.strictEqual(k({ altKey: true, shiftKey: true, key: 'Ò', code: 'KeyR' }), 'shift+alt+r');
+  assert.strictEqual(k({ altKey: true, key: '¡', code: 'Digit1' }), 'alt+1');
+  assert.strictEqual(k({ altKey: true, shiftKey: true, key: 'Enter', code: 'Enter' }), 'shift+alt+enter');
+  assert.strictEqual(k({ ctrlKey: true, shiftKey: true, key: '~', code: 'Backquote' }), 'ctrl+shift+`');
+  assert.strictEqual(k({ metaKey: true, key: 'P', code: 'KeyP' }), 'ctrl+p');
+});
+
+test('git read commands skip optional locks, writes do not', () => {
+  assert.deepStrictEqual(gitArgs(['status', '-z']), ['--no-optional-locks', 'status', '-z']);
+  assert.deepStrictEqual(gitArgs(['branch', '--format=%(refname:short)']), ['--no-optional-locks', 'branch', '--format=%(refname:short)']);
+  assert.deepStrictEqual(gitArgs(['branch', 'novo']), ['branch', 'novo']);
+  assert.deepStrictEqual(gitArgs(['commit', '-m', 'x']), ['commit', '-m', 'x']);
+});
+
+test('Standard, Gemfile and RSpec folder helpers', () => {
+  assert.ok(usesStandard('GEM\n  specs:\n    standard (1.40.0)\n'));
+  assert.ok(!usesStandard('    standard-custom (1.0)\n    rubocop (1.0)\n'));
+  assert.ok(isGemfile('/p/Gemfile.lock', '/p') && !isGemfile('/p/sub/Gemfile', '/p'));
+  assert.deepStrictEqual(specDirs(['/p/spec/models/a_spec.rb', '/p/spec/b_spec.rb', '/p/lib/x.rb'], '/p'), ['spec', 'spec/models']);
+  assert.deepStrictEqual(rspecFolderArgs('spec/models', ' user '), ['spec/models', '-e', 'user']);
+  assert.deepStrictEqual(rspecFolderArgs('spec', ''), ['spec']);
+  assert.strictEqual(testTarget({ file: 'spec/a_spec.rb', line: 5, id: './spec/a_spec.rb[1:2]' }), 'spec/a_spec.rb[1:2]');
+  assert.strictEqual(testTarget({ file: 'spec/a_spec.rb', line: 5 }), 'spec/a_spec.rb:5');
+  const [r] = parseTestReport(JSON.stringify({ examples: [{ id: './spec/a_spec.rb[1:2]', file_path: './spec/a_spec.rb', line_number: 5, full_description: 'x', status: 'passed' }] }), '/p');
+  assert.strictEqual(r.id, './spec/a_spec.rb[1:2]');
+});
+
+test('Rails resource rename plan', () => {
+  const files = ['app/models/post.rb', 'app/controllers/posts_controller.rb', 'app/helpers/posts_helper.rb', 'app/views/posts/index.html.erb', 'test/models/post_test.rb', 'spec/models/post_spec.rb', 'db/migrate/2024_create_posts.rb', 'app/models/user.rb'];
+  const plan = railsRenamePlan('app/controllers/posts_controller.rb', files, 'Article', 'articles')!;
+  assert.deepStrictEqual(plan.files.map(f => f.to), ['app/models/article.rb', 'test/models/article_test.rb', 'spec/models/article_spec.rb', 'app/controllers/articles_controller.rb', 'app/helpers/articles_helper.rb', 'app/views/articles']);
+  assert.deepStrictEqual(plan.consts.map(c => `${c.from}>${c.to}`), ['Post>Article', 'PostTest>ArticleTest', 'PostsController>ArticlesController', 'PostsHelper>ArticlesHelper']);
+  assert.strictEqual(railsRenamePlan('lib/x.rb', files, 'A', 'as'), undefined);
+  assert.deepStrictEqual([camelize('blog_post'), underscore('BlogPost'), needsPluralConfirm('article'), needsPluralConfirm('person'), needsPluralConfirm('category')], ['BlogPost', 'blog_post', false, true, false]);
+  assert.deepStrictEqual(railsReview('resources :posts\nroot "x"\nget :post_x', files, 'post', 'posts'), ['config/routes.rb:1: resources :posts', 'db/migrate/2024_create_posts.rb']);
+});
+
+test('parseInspections is defensive', () => {
+  const ok = { rule: 'Nil', message: 'x', severity: 'warning', line: 1, column: 2, endLine: 1, endColumn: 5 };
+  assert.deepStrictEqual(parseInspections(JSON.stringify([ok, { bad: 1 }])), [ok]);
+  assert.deepStrictEqual(parseInspections('warning: foo\n[]'), []);
+  assert.deepStrictEqual(parseInspections('{"a":1}'), []);
 });
