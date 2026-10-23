@@ -64,6 +64,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 2 — Arquivos, navegação e busca ★
 - [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo
 - [x] Renomear (F2) e mover para a lixeira (Delete) pelo menu de contexto do explorer; abas abertas acompanham
+- [x] Seleção múltipla no explorer (Ctrl/Cmd+clique, Shift+clique, Shift+Ctrl soma o intervalo); excluir vários com uma confirmação e resumo no fim; arrastar e soltar um ou vários itens numa pasta ou na raiz (pede confirmação antes de substituir; recusa pasta dentro dela mesma)
 - [x] Recarregar abas quando o arquivo muda fora do Rubaxe (ao focar a janela); aba com alterações não salvas é mantida e avisada
 - [x] Abrir arquivo solto (paleta: "Arquivo: Abrir Arquivo...")
 - [x] Abrir, editar e salvar (Ctrl+S)
@@ -157,7 +158,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 - [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão)
 - [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status), push/pull/fetch
+- [x] Aba Git numa pasta sem repositório (como no VS Code): Inicializar, Clonar (link validado, pasta de destino, abrir a pasta clonada) e Conectar a um remoto (init + origin); Push/Sincronizar sem remote pede o link e faz push -u
 - [x] Prévia de Markdown (`Ctrl+Shift+V`, botão na aba do `.md`, menu Exibir): aba própria ao lado do arquivo (o editor não divide a tela), atualiza ao vivo; GFM (tabelas, tarefas, tachado, autolinks), código colorido pelo Monaco, links relativos abrem no Rubaxe, `#âncora` rola, `http(s)` vai para o navegador; HTML passa pelo DOMPurify e nada carrega sozinho (imagens só locais, resolvidas a partir da pasta do `.md`; da web viram um marcador)
+- [x] Mensagens (toasts) e barras de entrada no estilo macOS: entrada e saída suaves, fundo translúcido com desfoque, pausa ao passar o mouse; sem animação com prefers-reduced-motion
 - [x] Redesign: cards flutuantes com cantos arredondados, acrílico/vibrancy (sólido sem material), topo limpo com menu ☰, ícones SVG próprios por tipo de arquivo, painel direito (Rails relacionados, servidor, Git; Ctrl+Alt+B) e botões de janela estilo macOS (`window.controls`)
 - [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
@@ -243,3 +246,37 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 - [ ] Vídeo, áudio, SVG inline e imagens `data:` dentro do `.md` não são exibidos (removidos pela sanitização).
 - [ ] Com muitas abas abertas, o botão de prévia (fixo à direita da barra de abas) cobre o fim da última aba.
 - [ ] No tema claro, as checkboxes de tarefa usam o visual padrão do Chromium (apagadas).
+
+## 10. Validação parcial: Git estilo VS Code, toasts e seleção múltipla (23/10/2026, interrompida)
+Rodada E2E encerrada a pedido do usuário antes do fim. App com `--user-data-dir` isolado; o `settings.json` real ficou intacto (mesmo SHA256 antes e depois). typecheck ok, 59/59 testes, build ok.
+
+**Passou**
+- Git, pasta sem repositório: tela com Inicializar / Clonar… / Conectar…, sem a caixa de commit.
+- Inicializar: vira a tela de commit.
+- Clonar… (`octocat/Hello-World`, pasta escolhida no diálogo nativo): clona e "Abrir a pasta clonada?" abre a pasta.
+- Conectar…: links inválidos são recusados (espaço, aspas, `-oProxyCommand`, `ext::`, `&`); um link válido faz `git init` + origin e mostra a tela de commit.
+- Push num repo sem remote pede o link e segue até o push.
+- Toasts:
+  - animação de entrada (0,22 s) e de saída;
+  - cantos de 14 px e blur;
+  - o hover pausa e retoma o tempo;
+  - contraste 9,2:1 no escuro e 7,4:1 no claro;
+  - sem animação com `prefers-reduced-motion`.
+- Quick-input e busca: entrada suave e cantos de 12/10 px. "Renomear…" reabre o quick-input sem piscar.
+- Seleção com mouse real: Ctrl+clique, Shift+clique e Shift+Ctrl+clique.
+- Arrastar 2 arquivos + 1 pasta: destaca a pasta-alvo, move os itens e as abas acompanham.
+  - Pasta dentro dela mesma: recusado.
+  - "Substituir?": cancelar pula o item; OK manda o antigo para a Lixeira.
+  - Soltar na área vazia: move para a raiz.
+- Excluir vários com Delete: uma única confirmação e o resumo "3 excluídos, 1 em uso". O arquivo travado responde em menos de 1 s; os ~49 s vistos antes não se repetiram.
+- Regressão: Ctrl+J, auto save, `end` automático, breakpoint/F5, Git no painel direito.
+
+**Bugs encontrados (a corrigir)**
+- [ ] Push/Conectar recusam qualquer repositório local (`C:\…\repo.git`, `C:/…`, `file:///…`), porque `isRemoteUrl` (`src/renderer/paths.ts`) só aceita `http(s)://`, `ssh://`, `git://` e `usuario@host:caminho`.
+- [ ] A saída do `git clone` vai para o painel Saída, mas o painel só abre sozinho em caso de erro (`src/renderer/git.ts`, `clone`).
+
+**Não testado nesta rodada**
+- [ ] Conteúdo renderizado da prévia de Markdown (a aba abriu, o conteúdo não foi conferido).
+- [ ] 15+ abas sem estourar o layout.
+- [ ] Clean room (`tools/cleanroom_check.py`).
+- [ ] Cmd+clique no macOS; material glass com toasts.

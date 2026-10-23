@@ -27,10 +27,18 @@ export function $(selector: string): HTMLElement {
   return el;
 }
 
-export function notify(message: string, kind: 'info' | 'error' = 'info') {
-  const toast = h('div', { className: `toast ${kind}` }, icon(kind === 'error' ? 'error' : 'info'), h('span', {}, message));
+const TOAST_ICONS = { info: 'info', error: 'error', success: 'pass' };
+
+// Hovering pauses the countdown; the leave animation runs before the node goes.
+export function notify(message: string, kind: 'info' | 'error' | 'success' = 'info') {
+  const toast = h('div', { className: `toast ${kind}` }, icon(TOAST_ICONS[kind]), h('span', {}, message));
   $('#toasts').append(toast);
-  setTimeout(() => toast.remove(), kind === 'error' ? 8000 : 4000);
+  let left = kind === 'error' ? 8000 : 4000, start = 0, timer: ReturnType<typeof setTimeout> | undefined;
+  const leave = () => { toast.classList.add('leaving'); setTimeout(() => toast.remove(), 180); };
+  const run = () => { start = Date.now(); timer = setTimeout(leave, left); };
+  toast.onmouseenter = () => { clearTimeout(timer); left -= Date.now() - start; };
+  toast.onmouseleave = run;
+  run();
 }
 
 // Shared workspace state; root is '' until a folder is open.

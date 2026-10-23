@@ -492,11 +492,11 @@ async function boot() {
   document.addEventListener('click', e => {
     const row = (e.target as Element).closest<HTMLElement>('.tree-row:not(.scm-section), .rp-row');
     const list = row?.closest('.view-body, .rp-card');
-    if (!row || !list) return;
+    if (!row || !list || list.id === 'explorer-tree') return;
     list.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
     row.classList.add('selected');
   });
-  Git.initGit();
+  Git.initGit(path => void openFolder(path));
   RightPanel.initRightPanel();
   initStatusBar();
   renderRubyView();

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { outermost, dropPlan, rangeBetween, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -142,4 +142,18 @@ test('parseInspections is defensive', () => {
   assert.deepStrictEqual(parseInspections(JSON.stringify([ok, { bad: 1 }])), [ok]);
   assert.deepStrictEqual(parseInspections('warning: foo\n[]'), []);
   assert.deepStrictEqual(parseInspections('{"a":1}'), []);
+});
+
+test('explorer multi-select: shift range, outermost items and drop targets', () => {
+  const order = ['a', 'b', 'c', 'd'];
+  assert.deepStrictEqual(rangeBetween(order, 'b', 'd'), ['b', 'c', 'd']);
+  assert.deepStrictEqual(rangeBetween(order, 'd', 'b'), ['b', 'c', 'd']);
+  assert.deepStrictEqual(rangeBetween(order, 'gone', 'c'), ['c']);
+  const w = String.raw;
+  assert.deepStrictEqual(outermost([w`C:\p\app`, w`c:\p\App\x.rb`, w`C:\p\apple.rb`], '\\', true), [w`C:\p\app`, w`C:\p\apple.rb`]);
+  assert.deepStrictEqual(outermost(['/p/a', '/p/A/x'], '/', false), ['/p/a', '/p/A/x']);
+  assert.strictEqual(dropPlan([w`C:\p\app`], w`C:\p\app`, '\\', true), undefined); // into itself
+  assert.strictEqual(dropPlan([w`C:\p\app`, w`C:\p\x.rb`], w`c:\p\app\models`, '\\', true), undefined); // into its own child
+  assert.deepStrictEqual(dropPlan([w`C:\p\app\a.rb`, w`C:\p\b.rb`], w`C:\p`, '\\', true), [w`C:\p\app\a.rb`]); // b.rb is already there
+  assert.deepStrictEqual(dropPlan(['/p/app2', '/p/app2/x'], '/p/app', '/', false), ['/p/app2']); // app2 is not under app
 });

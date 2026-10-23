@@ -269,6 +269,10 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .scm-letter { width: 14px; flex: none; text-align: center; font-weight: 600; margin-left: 4px; }
 .scm-row .row-action { margin-left: 0; }
 .scm-row .row-action:first-of-type { margin-left: auto; }
+.scm-init { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 12px 20px; }
+.scm-init p { margin: 0 0 4px; color: var(--muted); line-height: 1.5; }
+#scm-body .scm-init .button { display: block; text-align: center; border-radius: 8px; }
+.tree-row.drop-target, #explorer-tree.drop-target { background: var(--focus); box-shadow: inset 0 0 0 1px var(--accent); }
 .blame-text { color: #FFFFFF55 !important; font-style: italic; }
 
 #view-ruby #ruby-body { flex: 0 1 auto; }
@@ -310,8 +314,15 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 #quick-input {
   position: fixed; top: 48px; left: 50%; transform: translateX(-50%); width: min(600px, 90vw); z-index: 50;
   background: var(--widget); border: 1px solid var(--input-border); border-radius: 12px; padding: 8px;
-  box-shadow: 0 8px 28px #00000080;
+  box-shadow: 0 8px 28px #00000080; transform-origin: top center;
+  animation: bar-in .16s cubic-bezier(.2, .8, .2, 1); /* no leave animation: menu → rename reopens it at once */
 }
+@keyframes bar-in { from { opacity: 0; transform: translateX(-50%) scale(.98); } }
+#quick-input .input, #search-input { border-radius: 10px; padding: 6px 10px; }
+#view-search:not([hidden]) .search-box { animation: search-in .16s cubic-bezier(.2, .8, .2, 1); }
+@keyframes search-in { from { opacity: 0; transform: scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .toast, .toast.leaving, #quick-input, .search-box { animation: none !important; } }
+.quick-row.disabled { opacity: .55; cursor: default; }
 #quick-input .input { width: 100%; }
 #quick-input .input:focus-visible { outline: none; } /* the focused border already draws the ring */
 .quick-list { max-height: 50vh; overflow: auto; margin-top: 6px; }
@@ -320,12 +331,20 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .quick-row.selected { background: var(--focus); box-shadow: inset 0 0 0 1px var(--accent); } /* inset: an outline is clipped by the scrolling list */
 .quick-row:hover:not(.selected) { background: var(--hover); }
 
-#toasts { position: fixed; right: 16px; bottom: 48px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
+#toasts { position: fixed; right: 16px; bottom: 48px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 60; }
+/* 80% of --widget keeps the text at 4.5:1 with white or black behind (same rule as glass); glass --widget is already .8. */
 .toast {
-  display: flex; align-items: flex-start; gap: 8px; max-width: 420px; padding: 10px 12px; background: var(--editor);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 0 8px 2px #0000005C; user-select: text;
+  display: flex; align-items: flex-start; gap: 10px; max-width: 420px; padding: 12px 14px;
+  background: color-mix(in srgb, var(--widget) 80%, transparent); backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid var(--input-border); border-radius: 14px; box-shadow: 0 10px 30px #00000059, 0 1px 3px #00000040; user-select: text;
+  animation: toast-in .22s cubic-bezier(.2, .8, .2, 1);
 }
+[data-material="glass"] .toast { background: var(--widget); }
+.toast.leaving { animation: toast-out .18s ease-in forwards; pointer-events: none; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes toast-out { to { opacity: 0; transform: scale(.94); } }
 .toast.info .codicon { color: #3794FF; }
+.toast.success .codicon { color: var(--ok); }
 
 /* Keyboard focus only; the Chromium default ring is orange. */
 :focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }

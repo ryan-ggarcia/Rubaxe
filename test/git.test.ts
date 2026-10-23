@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseGitStatus, parseBlame } from '../src/renderer/paths.ts';
+import { parseGitStatus, parseBlame, isRemoteUrl, cloneDir } from '../src/renderer/paths.ts';
 
 test('git status splits staged, unstaged, untracked and renames', () => {
   const out = ['## main...origin/main [ahead 1]', 'M  staged.rb', ' M edited.rb', 'MM both.rb', '?? new.rb', 'R  new_name.rb', 'old_name.rb', ' D gone.rb', ''].join('\0');
@@ -21,4 +21,17 @@ test('git blame porcelain reuses commit info for repeated hashes', () => {
   const lines = parseBlame(out);
   assert.deepStrictEqual(lines.map(l => [l.author, l.summary]), [['Ana', 'first'], ['Ana', 'first'], ['Bia', 'second']]);
   assert.strictEqual(lines[2].time, 1700000100);
+});
+
+test('remote links: only plain git URLs reach the shell', () => {
+  for (const ok of ['https://github.com/a/b.git', 'http://host:8080/a/b', 'ssh://git@github.com/a/b.git', 'git://host/a.git', 'git@github.com:a/b.git', 'https://user@host.com/a/b'])
+    assert.ok(isRemoteUrl(ok), ok);
+  for (const bad of ['', 'https://github.com/a b.git', 'https://github.com/"a".git', "git@host:'a'", 'https://host/%PATH%', 'https://host/a!b!', '-uhttps://x/y', '--upload-pack=calc', 'ssh://-oProxyCommand/x', 'git@-oProxy:a', 'file:///C:/repo', 'C:\\repo','host:a/b', 'https://host/a&calc'])
+    assert.ok(!isRemoteUrl(bad), bad);
+});
+
+test('clone folder name follows git', () => {
+  assert.strictEqual(cloneDir('https://github.com/a/proj.git'), 'proj');
+  assert.strictEqual(cloneDir('git@github.com:a/proj.git'), 'proj');
+  assert.strictEqual(cloneDir('https://host/a/proj/'), 'proj');
 });

@@ -1,6 +1,6 @@
 import { $, h, icon } from './dom.ts';
 
-export interface QuickItem { label: string; description?: string; icon?: string; run: () => void }
+export interface QuickItem { label: string; description?: string; icon?: string; disabled?: boolean; run: () => void }
 
 interface Options {
   placeholder: string;
@@ -31,12 +31,13 @@ export function quickPick(opts: Options) {
     if (!accepted) opts.onDismiss?.();
   };
   const pick = (item?: QuickItem) => {
+    if (item?.disabled) return;
     close(true);
     if (item) item.run(); else opts.onAccept?.(input.value);
   };
   const paint = () => {
     list.replaceChildren(...items.slice(0, MAX_ROWS).map((it, i) => {
-      const row = h('div', { className: 'quick-row' + (i === selected ? ' selected' : ''), onmousedown: e => { e.preventDefault(); pick(it); } },
+      const row = h('div', { className: 'quick-row' + (i === selected ? ' selected' : '') + (it.disabled ? ' disabled' : ''), onmousedown: e => { e.preventDefault(); pick(it); } },
         icon(it.icon ?? 'blank'), h('span', { className: 'label' }, it.label), h('span', { className: 'desc' }, it.description ?? ''));
       return row;
     }));
@@ -47,7 +48,7 @@ export function quickPick(opts: Options) {
     const result = await opts.items(input.value);
     if (mine !== seq) return; // a newer keystroke already rendered
     items = result;
-    selected = 0;
+    selected = Math.max(0, items.findIndex(it => !it.disabled));
     paint();
   };
 

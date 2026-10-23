@@ -5,17 +5,20 @@ import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import { fileSvg, folderSvg } from './file-icons.ts';
 import * as Lsp from './lsp-client.ts';
-import { ipcMessage } from './paths.ts';
+import { dropPlan, ipcMessage, outermost, rangeBetween } from './paths.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
 const SYMBOL_ICONS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable', 'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enum-member', 'struct', 'event', 'operator', 'type-parameter'];
 const expanded = new Set<string>();
-let selected = '';
+let selected = ''; // last clicked: anchor of Shift+click and base of "New file"
 let selectedIsDir = false;
+const picked = new Set<string>(); // the highlighted rows (Ctrl/Shift+click select many)
+let dragged: string[] = [];
 
 // A new folder starts with no selection, so "New file" cannot land in the old one.
 export function resetExplorer() {
   expanded.clear();
+  picked.clear();
   selected = '';
   selectedIsDir = false;
 }
@@ -32,9 +35,38 @@ export function initExplorer(openFolder: () => void) {
   const tree = $('#explorer-tree');
   tree.tabIndex = 0;
   tree.onkeydown = e => {
-    if (!selected || (e.key !== 'F2' && e.key !== 'Delete')) return;
+    const many = chosen();
+    if (!many.length || (e.key !== 'F2' && e.key !== 'Delete')) return;
     e.preventDefault();
-    void (e.key === 'F2' ? renameEntry(selected) : deleteEntry(selected));
+    if (e.key === 'Delete') void deleteEntries(many);
+    else if (many.length === 1) void renameEntry(many[0]);
+  };
+  // Drop on a folder moves into it, on a file into its folder, on the empty area into the project root.
+  const destOf = (ev: DragEvent) => {
+    const row = (ev.target as HTMLElement).closest<HTMLElement>('.tree-row');
+    return !row ? ws.root : row.dataset.dir ? row.dataset.path! : parentOf(row.dataset.path!);
+  };
+  const mark = (dest?: string) => {
+    tree.classList.remove('drop-target');
+    tree.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+    if (dest !== undefined) (fold(dest) === fold(ws.root) ? tree : rows().find(r => r.dataset.path === dest))?.classList.add('drop-target');
+  };
+  const planOf = (ev: DragEvent) => dragged.length ? dropPlan(dragged, destOf(ev), ws.sep, api.platform === 'win32') : undefined;
+  tree.ondragover = ev => {
+    if (!dragged.length) return; // files dragged in from outside the app
+    if (!planOf(ev)) { ev.dataTransfer!.dropEffect = 'none'; return mark(); }
+    ev.preventDefault();
+    ev.dataTransfer!.dropEffect = 'move';
+    mark(destOf(ev));
+  };
+  tree.ondragleave = ev => { if (!tree.contains(ev.relatedTarget as Node)) mark(); };
+  tree.ondragend = () => { mark(); dragged = []; };
+  tree.ondrop = ev => {
+    ev.preventDefault();
+    mark();
+    const plan = planOf(ev);
+    dragged = [];
+    if (plan) void moveInto(plan, destOf(ev));
   };
   $('#outline-header').onclick = () => {
     const body = $('#outline');
@@ -63,21 +95,34 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
   const out: HTMLElement[] = [];
   for (const e of entries) {
     const open = expanded.has(e.path);
-    const row = h('div', { className: 'tree-row' + (e.path === selected ? ' selected' : ''), title: e.path },
+    const row = h('div', { className: 'tree-row' + (picked.has(e.path) ? ' selected' : ''), title: e.path, draggable: true },
       h('span', { className: `codicon codicon-${e.dir ? (open ? 'chevron-down' : 'chevron-right') : 'blank'}` }),
       e.dir ? folderSvg(open) : fileSvg(e.path),
       h('span', { className: 'tree-label' }, e.name));
     row.style.paddingLeft = `${6 + depth * 14}px`;
     row.setAttribute('role', 'treeitem');
-    row.onclick = async () => {
+    row.dataset.path = e.path;
+    if (e.dir) row.dataset.dir = '1';
+    row.onclick = async ev => {
+      const toggle = api.platform === 'darwin' ? ev.metaKey : ev.ctrlKey;
+      if (ev.shiftKey) {
+        if (!toggle) picked.clear();
+        rangeBetween(rows().map(r => r.dataset.path!), selected, e.path).forEach(p => picked.add(p));
+        return paintSelection();
+      }
       selected = e.path;
       selectedIsDir = e.dir;
+      if (toggle) {
+        if (!picked.delete(e.path)) picked.add(e.path);
+        return paintSelection();
+      }
+      picked.clear();
+      picked.add(e.path);
       if (e.dir) {
         if (open) expanded.delete(e.path); else expanded.add(e.path);
         await renderExplorer();
       } else {
-        document.querySelectorAll('.tree-row.selected').forEach(el => el.classList.remove('selected'));
-        row.classList.add('selected');
+        paintSelection();
         await Editor.openFile(e.path);
         $('#explorer-tree').focus(); // like VS Code: single click previews, focus stays for F2/Delete
       }
@@ -85,20 +130,35 @@ async function nodes(dir: string, depth: number): Promise<HTMLElement[]> {
     if (!e.dir) row.ondblclick = () => Editor.editor.focus();
     row.oncontextmenu = ev => {
       ev.preventDefault();
-      selected = e.path;
-      selectedIsDir = e.dir;
-      document.querySelectorAll('.tree-row.selected').forEach(el => el.classList.remove('selected'));
-      row.classList.add('selected');
-      quickPick({ placeholder: e.name, items: () => [
-        { label: 'Renomear...', description: 'F2', icon: 'edit', run: () => void renameEntry(e.path) },
-        { label: 'Mover para a lixeira', description: 'Delete', icon: 'trash', run: () => void deleteEntry(e.path) },
+      if (!picked.has(e.path)) {
+        selected = e.path;
+        selectedIsDir = e.dir;
+        picked.clear();
+        picked.add(e.path);
+        paintSelection();
+      }
+      const many = chosen();
+      quickPick({ placeholder: many.length > 1 ? `${many.length} itens selecionados` : e.name, items: () => [
+        { label: 'Renomear...', description: many.length > 1 ? 'um item por vez' : 'F2', icon: 'edit', disabled: many.length > 1, run: () => void renameEntry(e.path) },
+        { label: many.length > 1 ? `Mover ${many.length} itens para a lixeira` : 'Mover para a lixeira', description: 'Delete', icon: 'trash', run: () => void deleteEntries(many) },
       ] });
+    };
+    row.ondragstart = ev => {
+      if (!picked.has(e.path)) { selected = e.path; selectedIsDir = e.dir; picked.clear(); picked.add(e.path); paintSelection(); }
+      dragged = chosen();
+      ev.dataTransfer!.effectAllowed = 'move';
+      ev.dataTransfer!.setData('text/plain', dragged.join('\n'));
     };
     out.push(row);
     if (e.dir && open) out.push(...await nodes(e.path, depth + 1));
   }
   return out;
 }
+
+const rows = () => [...$('#explorer-tree').querySelectorAll<HTMLElement>('.tree-row')];
+// What is on screen and highlighted: a selection hidden by collapsing its folder is never deleted or moved.
+const chosen = () => rows().map(r => r.dataset.path!).filter(p => picked.has(p));
+const paintSelection = () => rows().forEach(r => r.classList.toggle('selected', picked.has(r.dataset.path!)));
 
 const parentOf = (p: string) => p.slice(0, p.length - basename(p).length - 1);
 // Windows paths are case-insensitive, and Monaco's fsPath lowercases the drive letter.
@@ -122,7 +182,7 @@ export async function moveEntry(from: string, to: string): Promise<boolean> {
     notify(`Não foi possível renomear ${basename(from)}: ${ipcMessage(e)}`, 'error');
     return false;
   }
-  for (const p of [...expanded]) if (isUnder(p, from)) { expanded.delete(p); expanded.add(to + p.slice(from.length)); }
+  for (const set of [expanded, picked]) for (const p of [...set]) if (isUnder(p, from)) { set.delete(p); set.add(to + p.slice(from.length)); }
   selected = to;
   const reopen = affected.map(t => to + t.path!.slice(from.length));
   affected.forEach(t => Editor.closeTab(t));
@@ -156,27 +216,56 @@ export async function refreshWorkspace() {
   await renderExplorer();
 }
 
-async function deleteEntry(p: string) {
-  if (!confirm(`Mover "${basename(p)}" para a lixeira?`)) return;
-  const dirty = tabsUnder(p).filter(t => t.dirty);
-  if (dirty.length && !confirm(`${dirty.map(t => `"${t.title}"`).join(', ')} tem alterações não salvas. Excluir e descartar as alterações?`)) return;
-  try {
-    // The Recycle Bin refused (network drive, disabled): permanent delete only on explicit yes; Cancel is the first item.
-    if (!await api.trashPath(p)) {
-      if (!await new Promise<boolean>(done => quickPick({
-        placeholder: `A Lixeira não aceita "${basename(p)}" neste local (unidade de rede ou Lixeira desativada). Excluir definitivamente? Isso não pode ser desfeito.`,
-        items: () => [{ label: 'Cancelar', icon: 'close', run: () => done(false) }, { label: 'Excluir definitivamente', icon: 'trash', run: () => done(true) }],
-        onDismiss: () => done(false),
-      }))) return;
-      await api.deletePath(p);
+// Drag and drop: a name already in dest is replaced only on an explicit yes, and the old item goes to the Recycle Bin.
+async function moveInto(paths: string[], dest: string) {
+  for (const p of paths) {
+    const to = dest + ws.sep + basename(p);
+    if (await api.exists(to)) {
+      if (!confirm(`"${basename(p)}" já existe em ${basename(dest)}. Substituir?`)) continue;
+      if (tabsUnder(to).some(t => t.dirty)) { notify(`Salve os arquivos abertos de ${basename(to)} antes de substituí-lo.`, 'error'); continue; }
+      try {
+        if (!await api.trashPath(to)) { notify(`A Lixeira não aceita "${basename(to)}" neste local. Nada foi substituído.`, 'error'); continue; }
+      } catch (e) {
+        notify(`Não foi possível substituir ${basename(to)}: ${ipcMessage(e)}`, 'error');
+        continue;
+      }
+      for (const t of tabsUnder(to)) Editor.closeTab(t, true);
     }
-    for (const t of tabsUnder(p)) Editor.closeTab(t, true); // only now: a refused or failed delete keeps unsaved text
-  } catch (e) {
-    return notify(`Não foi possível excluir ${basename(p)}: ${ipcMessage(e)}`, 'error');
+    await moveEntry(p, to);
   }
+}
+
+async function deleteEntries(list: string[]) {
+  const paths = outermost(list, ws.sep, api.platform === 'win32');
+  if (!paths.length || !confirm(paths.length === 1 ? `Mover "${basename(paths[0])}" para a lixeira?` : `Mover ${paths.length} itens para a Lixeira?`)) return;
+  const dirty = paths.flatMap(tabsUnder).filter(t => t.dirty);
+  if (dirty.length && !confirm(`${dirty.map(t => `"${t.title}"`).join(', ')} tem alterações não salvas. Excluir e descartar as alterações?`)) return;
+  let done = 0, busy = 0, failed = 0, kept = 0;
+  for (const p of paths) {
+    try {
+      // The Recycle Bin refused (network drive, disabled): permanent delete only on explicit yes; Cancel is the first item.
+      if (!await api.trashPath(p)) {
+        if (!await new Promise<boolean>(ok => quickPick({
+          placeholder: `A Lixeira não aceita "${basename(p)}" neste local (unidade de rede ou Lixeira desativada). Excluir definitivamente? Isso não pode ser desfeito.`,
+          items: () => [{ label: 'Cancelar', icon: 'close', run: () => ok(false) }, { label: 'Excluir definitivamente', icon: 'trash', run: () => ok(true) }],
+          onDismiss: () => ok(false),
+        }))) { kept++; continue; }
+        await api.deletePath(p);
+      }
+      for (const t of tabsUnder(p)) Editor.closeTab(t, true); // only now: a refused or failed delete keeps unsaved text
+      done++;
+    } catch (e) {
+      const message = ipcMessage(e);
+      if (message.includes('em uso')) busy++; else failed++;
+      notify(`Não foi possível excluir ${basename(p)}: ${message}`, 'error');
+    }
+  }
+  picked.clear();
   selected = '';
   await refreshFiles();
   await renderExplorer();
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (paths.length > 1) notify([plural(done, 'excluído'), busy && `${busy} em uso`, failed && `${failed} com erro`, kept && plural(kept, 'mantido')].filter(Boolean).join(', '), done === paths.length ? 'success' : 'info');
 }
 
 async function newEntry(isDir: boolean) {

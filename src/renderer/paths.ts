@@ -219,6 +219,35 @@ export function gitArgs(args: string[]): string[] {
   return read ? ['--no-optional-locks', ...args] : args;
 }
 
+// Remote link typed by the user goes to cmd.exe (shell: true) and quote() leaves % and ! alone: only a plain charset
+// passes, never a leading '-' (git would read an option, also as a host), and only the remote shapes git knows.
+export const isRemoteUrl = (url: string) =>
+  /^[\w.@:/~+-]+$/.test(url) && !url.startsWith('-') && /^((https?|ssh|git):\/\/\w|\w[\w.-]*@\w[\w.-]*:.)/.test(url);
+
+// Folder `git clone <url>` creates: last path segment without a trailing / or .git.
+export const cloneDir = (url: string) => url.replace(/\/+$/, '').split(/[/:]/).pop()!.replace(/\.git$/, '');
+
+// Multi-select acts on the outermost items: a file inside a selected folder goes with the folder.
+export function outermost(paths: string[], sep: string, win: boolean): string[] {
+  const f = (p: string) => win ? p.toLowerCase() : p;
+  return paths.filter(p => !paths.some(q => q !== p && f(p).startsWith(f(q) + sep)));
+}
+
+// Drag and drop into dest: undefined when a folder would land in itself or in its own subfolder, else the items that
+// move (those already in dest stay).
+export function dropPlan(paths: string[], dest: string, sep: string, win: boolean): string[] | undefined {
+  const f = (p: string) => win ? p.toLowerCase() : p;
+  const top = outermost(paths, sep, win);
+  if (top.some(p => f(dest) === f(p) || f(dest).startsWith(f(p) + sep))) return undefined;
+  return top.filter(p => f(p.slice(0, p.lastIndexOf(sep))) !== f(dest));
+}
+
+// Shift+click: the visible rows from the anchor to the clicked one, either way; only the clicked one without an anchor.
+export function rangeBetween(order: string[], anchor: string, target: string): string[] {
+  const a = order.indexOf(anchor), b = order.indexOf(target);
+  return a < 0 || b < 0 ? [target] : order.slice(Math.min(a, b), Math.max(a, b) + 1);
+}
+
 // Gemfile.lock lists the standard gem as "    standard (1.2.3)".
 export const usesStandard = (lock: string) => /^ {4}standard \(/m.test(lock);
 

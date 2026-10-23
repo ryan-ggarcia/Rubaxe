@@ -3,7 +3,8 @@ import type * as M from 'monaco-editor';
 import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import { refreshWorkspace } from './explorer.ts';
-import { gitArgs, parseBlame, parseGitStatus, relativeTo, type BlameLine, type GitChange } from './paths.ts';
+import * as Panel from './panel.ts';
+import { cloneDir, gitArgs, isRemoteUrl, parseBlame, parseGitStatus, relativeTo, type BlameLine, type GitChange } from './paths.ts';
 import * as Features from './features.ts';
 import { prompt, quickPick } from './quick-input.ts';
 
@@ -12,6 +13,7 @@ export let branch = '';
 export let changes = 0; // files with staged or unstaged changes
 const listeners: (() => void)[] = [];
 export const onDidRefresh = (fn: () => void) => listeners.push(fn);
+let openFolder: (path: string) => void = () => {};
 let timer: ReturnType<typeof setTimeout> | undefined;
 const blames = new Map<M.editor.ITextModel, BlameLine[]>();
 let blameIds: string[] = [];
@@ -45,6 +47,7 @@ export async function refresh() {
     top = branch = '';
     changes = 0;
     renderStatus();
+    $('.scm-commit').hidden = true;
     return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Git desativado em Configurações.'));
   }
   const root = await api.exec('git', gitArgs(['rev-parse', '--show-toplevel']), ws.root);
@@ -53,15 +56,14 @@ export async function refresh() {
     branch = '';
     changes = 0;
     renderStatus();
-    const init = h('button', { className: 'button' }, icon('repo'), ' Inicializar repositório');
-    init.onclick = async () => { if (await gitOk('init')) void refresh(); };
-    return $('#scm-body').replaceChildren(h('div', { className: 'empty' }, 'Esta pasta não é um repositório Git.'), h('div', { className: 'empty' }, init));
+    return initForm();
   }
   const r = await git('status', '--porcelain=v1', '-b', '-z', '-uall'); // -uall: an untracked folder lists its files, not one nameless row
   const s = parseGitStatus(r.out);
   branch = s.branch;
   changes = new Set([...s.staged, ...s.unstaged].map(c => c.path)).size;
   renderStatus();
+  $('.scm-commit').hidden = false;
   const section = (title: string, list: GitChange[], staged: boolean) => {
     const action = (name: string, tip: string, run: () => unknown) => { const el = icon(name, tip); el.classList.add('row-action'); el.onclick = e => { e.stopPropagation(); void run(); }; return el; };
     const all = action(staged ? 'remove' : 'add', staged ? 'Remover tudo da área de preparação' : 'Preparar tudo', () => stage(list.map(c => c.path), !staged));
@@ -84,6 +86,47 @@ export async function refresh() {
     ...(s.staged.length ? section('Preparadas', s.staged, true) : []),
     ...section('Alterações', s.unstaged, false),
   );
+}
+
+// Not a repository, like VS Code: init here, clone elsewhere, or init + origin.
+function initForm() {
+  $('.scm-commit').hidden = true;
+  const button = (label: string, secondary: boolean, run: () => Promise<unknown>) => {
+    const el = h('button', { className: secondary ? 'button secondary' : 'button' }, label);
+    el.onclick = () => void run();
+    return el;
+  };
+  $('#scm-body').replaceChildren(h('div', { className: 'scm-init' },
+    h('p', {}, 'A pasta aberta não é um repositório Git. Inicialize um repositório para controlar as versões com Git, clone um existente ou conecte esta pasta a um repositório remoto.'),
+    button('Inicializar repositório', false, async () => { if (await gitOk('init')) void refresh(); }),
+    button('Clonar repositório…', true, clone),
+    button('Conectar a um repositório remoto…', true, async () => {
+      const link = await askRemote();
+      if (!link || !await gitOk('init')) return;
+      await gitOk('remote', 'add', 'origin', link);
+      void refresh(); // a repository now, even if origin failed
+    })));
+}
+
+// The link reaches cmd.exe (shell: true): isRemoteUrl is the gate on every path.
+async function askRemote() {
+  const link = await prompt('Link do repositório remoto (https://github.com/usuario/projeto.git ou git@github.com:usuario/projeto.git)');
+  if (!link) return;
+  if (isRemoteUrl(link)) return link;
+  notify('Link inválido. Use https://, ssh://, git:// ou usuario@host:caminho, sem espaços nem aspas.', 'error');
+}
+
+async function clone() {
+  const link = await askRemote();
+  const parent = link && await api.openFolder();
+  if (!parent) return;
+  notify(`Clonando ${link}…`);
+  const r = await api.exec('git', ['clone', link], parent);
+  Panel.append(`> git clone ${link}\n${r.out}\n`);
+  if (r.code !== 0) { Panel.show('output'); return notify('git clone falhou. A saída está no painel Saída.', 'error'); }
+  const dir = parent + ws.sep + cloneDir(link);
+  notify(`Repositório clonado em ${dir}.`, 'success');
+  if (confirm(`Repositório clonado em ${dir}.\n\nAbrir a pasta clonada?`)) openFolder(dir);
 }
 
 // Coalesces bursts (save + focus + command exit) into one `git status`.
@@ -142,13 +185,19 @@ export async function sync(kind: 'push' | 'pull' | 'fetch'): Promise<boolean> {
   if (!enabled()) return false;
   if (!top) { notify('Esta pasta não é um repositório Git.'); return false; }
   const remotes = (await git('remote')).out.split(/\s+/).filter(Boolean);
-  if (!remotes.length) { notify('Nenhum remote configurado. Use: git remote add origin <url>'); return false; }
+  if (!remotes.length) {
+    const link = await askRemote();
+    if (!link || !await gitOk('remote', 'add', 'origin', link)) return false;
+    remotes.push('origin');
+    notify(`Remote origin conectado: ${link}`, 'success');
+    if (kind === 'pull') return true; // the new origin has no upstream yet; Sincronizar goes on to push -u
+  }
   let args: string[] = [kind];
   if (kind === 'push' && (await git('rev-parse', '--abbrev-ref', '@{u}')).code !== 0 && remotes.includes('origin')) args = ['push', '-u', 'origin', branch];
   notify(`git ${kind}…`);
   const ok = await gitOk(...args);
   if (ok) {
-    notify(`Git ${kind} concluído.`);
+    notify(`Git ${kind} concluído.`, 'success');
     if (kind === 'pull') { await Editor.syncFromDisk(); await refreshWorkspace(); }
   }
   void refresh();
@@ -204,7 +253,9 @@ function renderStatus() {
   listeners.forEach(fn => fn());
 }
 
-export function initGit() {
+// openFolder comes from app.ts (passed in to avoid an import cycle).
+export function initGit(open: (path: string) => void) {
+  openFolder = open;
   $('#scm-actions').replaceChildren(...[
     icon('check', 'Commit (Ctrl+Enter)'), icon('refresh', 'Atualizar'), icon('git-branch', 'Trocar branch'),
     icon('repo-push', 'Push'), icon('repo-pull', 'Pull'), icon('repo-fetch', 'Fetch'),
