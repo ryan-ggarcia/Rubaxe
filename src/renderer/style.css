@@ -44,6 +44,13 @@
 /* Glass: .8 is the least opacity keeping text at 4.5:1 with a white or a black window behind; popups blur the editor (backdrop-filter never sees the desktop). */
 [data-material="glass"] { --bar: rgba(24, 24, 24, .8); --widget: rgba(34, 34, 34, .8); --chrome: transparent; }
 [data-material="glass"][data-theme="light"] { --bar: rgba(243, 243, 243, .8); --widget: rgba(248, 248, 248, .8); }
+/* Linux transparent: no blur, so the desktop shows sharp; .92 keeps --fg and --muted at 4.5:1 and other windows' text faint (1.31:1), the gaps keep a tint. */
+[data-material="glass"][data-transparent] { --bar: rgba(24, 24, 24, .92); --widget: rgba(34, 34, 34, .92); --chrome: rgba(12, 12, 13, .8); }
+[data-material="glass"][data-transparent][data-theme="light"] { --bar: rgba(243, 243, 243, .92); --widget: rgba(248, 248, 248, .92); --chrome: rgba(217, 218, 223, .8); }
+/* Frameless transparent window: round its corners like macOS; body's overflow: hidden clips the title bar. */
+[data-transparent]:not([data-maximized]) body { border-radius: var(--radius); }
+/* With no html background, body's background propagates to the canvas, which ignores border-radius; an inset shadow is clipped by it. */
+[data-transparent] body { background: none; box-shadow: inset 0 0 0 100vmax var(--chrome); }
 [data-material="glass"] #titlebar { background: var(--bar); } /* a bare backdrop fails AA (1.08:1 light over black) */
 [data-material="glass"] #quick-input, [data-material="glass"] #menubar, [data-material="glass"] .menu-popup { backdrop-filter: blur(24px) saturate(1.5); }
 * { box-sizing: border-box; }

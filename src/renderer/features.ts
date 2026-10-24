@@ -68,6 +68,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
 const SETTINGS: Setting[] = [
   ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
   ['Aparência', 'window.controls', 'Botões da janela (fora do macOS): "nativos" usa os do sistema; "mac" desenha círculos coloridos à esquerda. Reinicia o Rubaxe ao mudar.', ['nativos', 'mac'], 'nativos'],
+  ['Aparência', 'window.transparent', 'Janela transparente (só Linux): mostra a área de trabalho atrás da janela. O Linux não desfoca sozinho: para o desfoque estilo macOS, instale a extensão Blur my Shell, coloque rubaxe na lista de Aplicativos e desligue a Opacidade dinâmica (senão o desfoque some quando a janela está em foco). Usa os botões coloridos do Rubaxe. Sem sombra; para redimensionar, arraste bem rente à borda (ou use Super + arrastar com o botão do meio). Reinicia o Rubaxe ao mudar.', 'boolean', false],
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
   ['Ruby', 'ruby.lspPath', 'Comando do servidor Ruby LSP (gem install ruby-lsp).', 'string', 'ruby-lsp'],
   ['Ruby', 'test.framework', 'Framework de testes.', ['auto', 'rspec', 'minitest'], 'auto'],

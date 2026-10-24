@@ -148,6 +148,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Inlay hints e realce semântico (do Ruby LSP; ele só marca o que a gramática não distingue)
 - [x] Hierarquia de tipos (Ruby LSP) e chamadas do método (Shift+Alt+H; montada a partir dos usos, o Ruby LSP não tem call hierarchy)
 - [x] Gerenciadores de versão: seletor de interpretador (rbenv, rvm, asdf, chruby, mise, RubyInstaller, PATH); o escolhido vai na frente do PATH de tudo que o Rubaxe executa
+- [x] Linux sem `ruby` no PATH (aberto pelo menu): o primeiro Ruby dos gerenciadores entra no PATH de LSP, execução e terminal; `ruby.path` absoluto vence (macOS: não verificado)
 - [x] Lista de gems (view Ruby) com navegação para o código-fonte
 - [x] RBS e Steep — `.rbs` com realce Ruby e comando `steep check` (testado com Steep 2.1: aponta o erro de tipo contra a assinatura RBS)
 - [x] Console IRB; enviar seleção ao console (Shift+Alt+Enter). Pry: rode `pry` no terminal
@@ -162,6 +163,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Prévia de Markdown (`Ctrl+Shift+V`, botão na aba do `.md`, menu Exibir): aba própria ao lado do arquivo (o editor não divide a tela), atualiza ao vivo; GFM (tabelas, tarefas, tachado, autolinks), código colorido pelo Monaco, links relativos abrem no Rubaxe, `#âncora` rola, `http(s)` vai para o navegador; HTML passa pelo DOMPurify e nada carrega sozinho (imagens só locais, resolvidas a partir da pasta do `.md`; da web viram um marcador)
 - [x] Mensagens (toasts) e barras de entrada no estilo macOS: entrada e saída suaves, fundo translúcido com desfoque, pausa ao passar o mouse; sem animação com prefers-reduced-motion
 - [x] Redesign: cards flutuantes com cantos arredondados, acrílico/vibrancy (sólido sem material), topo limpo com menu ☰, ícones SVG próprios por tipo de arquivo, painel direito (Rails relacionados, servidor, Git; Ctrl+Alt+B) e botões de janela estilo macOS (`window.controls`)
+- [x] Linux: janela transparente opcional (`window.transparent`), desfoque só pela extensão Blur my Shell (lista de Aplicativos com rubaxe e Opacidade dinâmica desligada; conferido em captura real); superfícies a 92% e espaços com tinta do tema — conferido em GNOME Wayland (captura real): com a opção ligada usa os círculos do Rubaxe (com `window.controls` nativos ou mac), sem overlay nativo, e fechar/minimizar/maximizar funcionam; sem sombra; redimensiona só por uma faixa de ~5 px dentro da borda
 - [ ] Cliente HTTP — adiado: é um produto à parte; sem pedido concreto
 - [ ] Ferramentas de banco de dados — adiado: idem; `rails console`/`rails dbconsole` cobrem o básico
 

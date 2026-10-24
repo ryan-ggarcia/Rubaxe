@@ -369,7 +369,7 @@ function onSettingChange(key: string) {
   if (key === 'features.diagnostics') Lsp.refreshDiagnostics();
   if (key === 'features.documentSymbols') void renderOutline();
   if (key === 'workbench.theme') applyTheme();
-  if (key === 'window.controls') { notify('Reiniciar para aplicar'); void api.saveSettings(Features.all()).then(() => api.relaunch()); }
+  if (key === 'window.controls' || key === 'window.transparent') { notify('Reiniciar para aplicar'); void api.saveSettings(Features.all()).then(() => api.relaunch()); }
   if (key === 'features.inspections') Ruby.inspectAll();
   if (key === 'ruby.lspPath' && ws.root) void startLsp();
   if (key === 'rubocop.standard' && ws.root) void startLsp();
@@ -383,9 +383,9 @@ function onSettingChange(key: string) {
 
 // ---------- boot ----------
 
-// 'mac' draws our own traffic-light circles (the main process creates the window without native controls); macOS keeps its own.
-function initWindowControls() {
-  if (Features.get<string>('window.controls') !== 'mac' || api.platform === 'darwin') return;
+// 'mac' (or a transparent window, where Linux loses the native frame) draws our own traffic-light circles; macOS keeps its own.
+function initWindowControls(material: string) {
+  if ((Features.get<string>('window.controls') !== 'mac' && material !== 'transparent') || api.platform === 'darwin') return;
   document.body.classList.add('controls-mac');
   const max = $('#wc-max');
   $('#wc-close').onclick = () => api.windowControl('close');
@@ -394,6 +394,7 @@ function initWindowControls() {
   api.onMaximizeChange(maximized => {
     max.firstElementChild!.className = `codicon codicon-chrome-${maximized ? 'restore' : 'maximize'}`;
     max.title = max.ariaLabel = maximized ? 'Restaurar' : 'Maximizar';
+    document.documentElement.toggleAttribute('data-maximized', maximized);
   });
 }
 
@@ -454,8 +455,10 @@ function defineTheme() {
 async function boot() {
   document.body.classList.add(`platform-${api.platform}`);
   Features.load(await api.loadSettings());
-  if ((await api.windowMaterial()) !== 'none') document.documentElement.dataset.material = 'glass';
-  initWindowControls();
+  const material = await api.windowMaterial();
+  if (material !== 'none') document.documentElement.dataset.material = 'glass';
+  if (material === 'transparent') document.documentElement.dataset.transparent = '';
+  initWindowControls(material);
   await Ruby.applyRubyBin();
   defineTheme();
   Editor.createEditor(container => Features.render(container, onSettingChange), (tab, page) => void Markdown.render(tab, page));

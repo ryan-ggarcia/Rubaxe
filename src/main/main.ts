@@ -22,8 +22,9 @@ let lsp: ChildProcess | null = null;
 let allowClose = false;
 let afterClose: 'quit' | 'relaunch' | 'install' = 'quit'; // set by the relaunch/installUpdate requests, reset by any other close attempt
 let nativeControls = true; // false: window.controls 'mac' on Windows/Linux, the renderer draws the buttons
-// backgroundMaterial needs Windows 11 22H2 (build 22621); vibrancy is macOS-only. Everything else stays solid.
-const material = process.platform === 'darwin' ? 'vibrancy'
+// backgroundMaterial needs Windows 11 22H2 (build 22621); vibrancy is macOS-only. Everything else stays solid,
+// except Linux with window.transparent: see-through only, Linux has no native blur.
+let material: 'vibrancy' | 'acrylic' | 'transparent' | 'none' = process.platform === 'darwin' ? 'vibrancy'
   : process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621 ? 'acrylic' : 'none';
 const runs = new Map<string, ChildProcess>();
 let debug: { proc?: ChildProcess; sock?: net.Socket } = {};
@@ -33,6 +34,8 @@ const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...args); };
 
 let rubyBin = ''; // bin dir of the interpreter chosen in Rubaxe, put first on PATH for every child process
+// Apps opened from a desktop menu miss the PATH set in ~/.bashrc: with no ruby on PATH, the first findRubies() one stands in.
+let rubyFallback = '';
 
 // extra.RUBYOPT / RUBYLIB are appended to the user's own values instead of replacing them.
 // Helper paths go in RUBYLIB (a real path list, spaces allowed); RUBYOPT cannot quote, so it only gets -r<name>.
@@ -42,7 +45,8 @@ function childEnv(extra: Record<string, string> = {}): Record<string, string> {
   if (extra.RUBYLIB) env.RUBYLIB = [extra.RUBYLIB, process.env.RUBYLIB].filter(Boolean).join(path.delimiter);
   // Windows spells it "Path"; adding a second "PATH" key would leave which one wins to chance.
   const key = Object.keys(env).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
-  if (rubyBin) env[key] = rubyBin + path.delimiter + (env[key] ?? '');
+  const bin = rubyBin || rubyFallback;
+  if (bin) env[key] = bin + path.delimiter + (env[key] ?? '');
   return env;
 }
 
@@ -83,6 +87,11 @@ async function findRubies(): Promise<{ path: string; manager: string }[]> {
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 const pathDirs = () => (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
 const firstExisting = async (ps: string[]) => { for (const p of ps) if (await exists(p)) return p; };
+const findRubyFallback = async () => {
+  if (process.platform === 'win32' || await firstExisting(pathDirs().map(d => path.join(d, 'ruby')))) return '';
+  const r = (await findRubies())[0];
+  return r ? path.dirname(r.path) : '';
+};
 
 // wsl.exe with no distro turns any key into "install WSL": offer the profile only when -l -q names a distro. Once per session.
 let wslDistro: Promise<boolean> | undefined;
@@ -411,8 +420,12 @@ ipcMain.on('installUpdate', () => {
 app.whenReady().then(async () => {
   // Windows/Linux use the HTML menu bar; macOS needs a native menu or Cmd+C/V/X/A and Cmd+Q stop working.
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
-  // macOS always keeps its traffic lights.
-  nativeControls = process.platform === 'darwin' || (await loadSettings())?.['window.controls'] !== 'mac';
+  // Before loadFile: the renderer starts the LSP right after loading, and that spawn must already see the fallback.
+  const [settings, fallback] = await Promise.all([loadSettings(), findRubyFallback()]);
+  rubyFallback = fallback;
+  if (process.platform === 'linux' && settings?.['window.transparent'] === true) material = 'transparent';
+  // macOS always keeps its traffic lights. A transparent window gets no frame on GNOME Wayland (the overlay is 0x0).
+  nativeControls = process.platform === 'darwin' || (settings?.['window.controls'] !== 'mac' && material !== 'transparent');
   win = new BrowserWindow({
     width: 1400, height: 900, title: 'Rubaxe',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'), // the logo's mark without the wordmark
@@ -420,6 +433,7 @@ app.whenReady().then(async () => {
     backgroundColor: material === 'none' ? '#1F1F1F' : '#00000000',
     ...(material === 'acrylic' && { backgroundMaterial: 'acrylic' }),
     ...(material === 'vibrancy' && { vibrancy: 'under-window', visualEffectState: 'active' }),
+    ...(material === 'transparent' && { transparent: true }),
     titleBarStyle: 'hidden', ...(nativeControls && { titleBarOverlay: { color: '#181818', symbolColor: '#CCCCCC', height: 35 } }),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
@@ -452,6 +466,7 @@ app.whenReady().then(async () => {
   });
   win.on('maximize', () => send('maximizeChange', true));
   win.on('unmaximize', () => send('maximizeChange', false));
+  win.webContents.on('did-finish-load', () => send('maximizeChange', win!.isMaximized())); // GNOME may open it maximized
   win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
   if (app.isPackaged) {
     setTimeout(checkForUpdates, 10_000);

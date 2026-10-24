@@ -9,6 +9,10 @@ export interface UpdateStatus { state: 'available' | 'downloading' | 'ready' | '
 const invoke = <R, A extends unknown[] = []>(ch: string) => (...args: A) => ipcRenderer.invoke(ch, ...args) as Promise<R>;
 const on = <A extends unknown[]>(ch: string) => (cb: (...args: A) => void) => { ipcRenderer.on(ch, (_e, ...args) => cb(...(args as A))); };
 
+// The renderer subscribes late (after Monaco loads): keep the last state and replay it on subscribe.
+let maximized = false;
+ipcRenderer.on('maximizeChange', (_e, m: boolean) => { maximized = m; });
+
 const api = {
   platform: process.platform,
   openFolder: invoke<string | null>('openFolder'),
@@ -61,10 +65,10 @@ const api = {
   watchFolder: invoke<void, [root: string]>('watchFolder'),
   onFsChange: on<[paths: string[]]>('fsChange'),
   setTitleBarOverlay: (color: string, symbolColor: string) => ipcRenderer.send('setTitleBarOverlay', color, symbolColor), // #rrggbb or #rrggbbaa
-  windowMaterial: invoke<'acrylic' | 'vibrancy' | 'none'>('windowMaterial'), // 'none': use solid backgrounds
+  windowMaterial: invoke<'acrylic' | 'vibrancy' | 'transparent' | 'none'>('windowMaterial'), // 'none': use solid backgrounds
   windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.send('windowControl', action), // maximize toggles restore
   relaunch: () => ipcRenderer.send('relaunch'), // goes through onCloseRequest/confirmClose like a normal close
-  onMaximizeChange: on<[maximized: boolean]>('maximizeChange'),
+  onMaximizeChange: (cb: (maximized: boolean) => void) => { cb(maximized); on<[maximized: boolean]>('maximizeChange')(cb); },
   onUpdateStatus: on<[status: UpdateStatus]>('updateStatus'),
   installUpdate: () => ipcRenderer.send('installUpdate'), // 'ready' goes through onCloseRequest/confirmClose like relaunch
   checkForUpdates: invoke<void>('checkForUpdates'), // resolves when the check ends; the result arrives via onUpdateStatus
