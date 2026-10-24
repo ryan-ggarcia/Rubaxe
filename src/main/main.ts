@@ -193,6 +193,7 @@ function startLsp(cmd: string, cwd: string) {
   if (process.platform === 'win32') child.stdout!.once('data', () => spawn('attrib', ['+h', path.join(cwd, '.ruby-lsp')]));
   child.stdout!.on('data', createParser(msg => send('lspMessage', msg)));
   child.stderr!.on('data', d => send('lspLog', d.toString()));
+  child.stdin!.on('error', e => send('lspLog', e.message + '\n')); // EPIPE when ruby-lsp is missing and the shell already exited
   child.on('error', e => send('lspLog', e.message + '\n'));
   child.on('exit', code => { if (lsp === child) { lsp = null; send('lspExit', code); } });
 }

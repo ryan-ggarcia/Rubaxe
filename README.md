@@ -41,7 +41,7 @@ Prefere configurar o Ruby à mão? Instale o *Ruby+Devkit* (`winget install Ruby
 
 Os pacotes `.AppImage` (Linux) e `.dmg` (macOS) também ficam em [Releases](https://github.com/ryan-ggarcia/Rubaxe/releases), gerados automaticamente pelo GitHub Actions. Ainda não foram testados nessas plataformas: relatos de problemas são bem-vindos.
 
-- **Linux:** `chmod +x Rubaxe-*.AppImage` e execute.
+- **Linux:** `chmod +x Rubaxe-*.AppImage` e execute. O AppImage precisa do libfuse2 (Arch: `sudo pacman -S fuse2`; Debian/Ubuntu: `libfuse2` ou `libfuse2t64`); sem ele, rode com `--appimage-extract-and-run`.
 - **macOS:** sem assinatura, o primeiro uso pede **botão direito → Abrir**.
 
 Em ambos, instale o Ruby (de preferência por um gerenciador de versões) e rode `gem install ruby-lsp`.
@@ -54,8 +54,8 @@ Requisitos: Node.js 24 (mínimo 22.18, que roda os testes em TypeScript direto),
 git clone https://github.com/ryan-ggarcia/Rubaxe.git
 cd Rubaxe
 npm install
-npm install-scripts approve electron   # o npm 11 bloqueia scripts de instalação; sem isso o Electron não é baixado
-npm start                              # compila e abre o Rubaxe
+npm install-scripts approve node-pty esbuild   # o npm bloqueia scripts de instalação; o node-pty compila no Linux e o esbuild baixa o binário
+npm start                                      # compila e abre o Rubaxe
 ```
 
 Outros comandos:
