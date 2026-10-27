@@ -65,9 +65,12 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
   ]],
 ];
 
+// Lowest window.zoomLevel: 1.2^level = 80% (user request; Chromium itself goes down to 25%).
+export const MIN_ZOOM = Math.log(0.8) / Math.log(1.2);
+
 const SETTINGS: Setting[] = [
   ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
-  ['Aparência', 'window.zoomLevel', 'Nível de zoom da janela: 0 = 100%, cada passo multiplica por 1,2 (1 = 120%, -1 ≈ 83%). De -8 a 8. Atalhos: Ctrl+= / Ctrl+- / Ctrl+0.', 'number', 0],
+  ['Aparência', 'window.zoomLevel', 'Nível de zoom da janela: 0 = 100%, cada passo multiplica por 1,2 (1 = 120%, -1 ≈ 83%). Mínimo 80% (≈ -1,22), máximo 8. Atalhos: Ctrl+= / Ctrl+- / Ctrl+0.', 'number', 0],
   ['Aparência', 'window.controls', 'Botões da janela (fora do macOS): "nativos" usa os do sistema; "mac" desenha círculos coloridos à esquerda. Reinicia o Rubaxe ao mudar.', ['nativos', 'mac'], 'nativos'],
   ['Aparência', 'window.transparent', 'Janela transparente (só Linux): mostra a área de trabalho atrás da janela. O Linux não desfoca sozinho: para o desfoque estilo macOS, instale a extensão Blur my Shell, coloque rubaxe na lista de Aplicativos e desligue a Opacidade dinâmica (senão o desfoque some quando a janela está em foco). Usa os botões coloridos do Rubaxe. Sem sombra; para redimensionar, arraste bem rente à borda (ou use Super + arrastar com o botão do meio). Reinicia o Rubaxe ao mudar.', 'boolean', false],
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
@@ -123,7 +126,7 @@ function controlFor(key: string, type: Setting[3], changed: (key: string, value:
     const v = type === 'number' ? Number(input.value) : input.value.trim();
     // Empty or zero would make the editor unusable (font size 0); keep the last good value.
     // (empty text is fine when the default is empty: it means "use the default"; the zoom level is 0 = 100% and may be negative)
-    const bad = key === 'window.zoomLevel' ? !(input.value.trim() && Math.abs(Number(v)) <= 8) : type === 'number' ? !(Number(v) > 0) : !v && SETTINGS.find(s => s[1] === key)![4] !== '';
+    const bad = key === 'window.zoomLevel' ? !(input.value.trim() && Number(v) >= MIN_ZOOM && Number(v) <= 8) : type === 'number' ? !(Number(v) > 0) : !v && SETTINGS.find(s => s[1] === key)![4] !== '';
     if (bad) { input.value = String(settings[key]); return; }
     changed(key, v);
   };

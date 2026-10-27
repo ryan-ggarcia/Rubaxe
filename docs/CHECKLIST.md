@@ -53,13 +53,13 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Barra de título customizada com Command Center (clique abre o Quick Open)
 - [x] Barra de menus (Arquivo, Editar, Seleção, Exibir, Ir, Executar, Terminal, Ajuda) ligada aos comandos existentes
 - [x] Activity Bar: Explorer, Busca, Controle de Código, Executar e Depurar, Testes, Ruby, Configurações
-- [x] Side Bar redimensionável e recolhível (Ctrl+B)
+- [x] Side Bar redimensionável e recolhível (Ctrl+B ou botão na barra de título)
 - [x] Abas de editor: ativa/inativa, indicador de "não salvo", fechar (Ctrl+W)
 - [x] Panel inferior redimensionável (Ctrl+J abre já com terminal): Problemas, Saída, Console de Depuração, Terminal
 - [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
 - [x] Tema escuro e claro (`workbench.theme`) com destaque vermelho Ruby (#CC342D) e cantos arredondados, também no Monaco, xterm e barra de título
 - [x] Auto save: 1 s após a última edição e ao trocar de aba/perder o foco; não formata (só Ctrl+S) e não sobrescreve edição externa (com aba suja + edição externa o auto save fica suspenso; Ctrl+S grava)
-- [x] Zoom da janela como no VS Code (`window.zoomLevel`, fator 1,2^nível, -8 a 8): Ctrl+= / Ctrl++ / Ctrl+-, Ctrl+0 redefine; item na Status Bar com −/+/Redefinir enquanto ≠ 100%
+- [x] Zoom da janela como no VS Code (`window.zoomLevel`, fator 1,2^nível, mínimo 80% (≈ -1,22) até 8): Ctrl+= / Ctrl++ / Ctrl+-, Ctrl+0 redefine; item na Status Bar com −/+/Redefinir enquanto ≠ 100%
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
 
 ### Fase 2 — Arquivos, navegação e busca ★

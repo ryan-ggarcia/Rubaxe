@@ -46,11 +46,11 @@ const commands: Command[] = [
   { id: 'problems', label: 'Exibir: Problemas', key: 'Ctrl+Shift+M', icon: 'warning', run: () => Panel.show('problems') },
   { id: 'output', label: 'Exibir: Saída', key: 'Ctrl+Shift+U', icon: 'output', run: () => Panel.show('output') },
   { id: 'mdPreview', label: 'Markdown: Abrir Prévia', key: 'Ctrl+Shift+V', icon: 'open-preview', when: () => Editor.isMarkdown(), run: () => Editor.openPreview() },
-  { id: 'zoomIn', label: 'Exibir: Ampliar', key: 'Ctrl+=', icon: 'zoom-in', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
+  { id: 'zoomIn', label: 'Exibir: Ampliar', key: 'Ctrl+=', icon: 'zoom-in', run: () => zoomStep(1) },
   // Ctrl++ = numeric keypad (or a layout with an unshifted +); Ctrl+Shift++ = Ctrl+Shift+= on US/ABNT layouts.
-  { id: 'zoomInPlus', label: 'Exibir: Ampliar', key: 'Ctrl++', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
-  { id: 'zoomInShift', label: 'Exibir: Ampliar', key: 'Ctrl+Shift++', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
-  { id: 'zoomOut', label: 'Exibir: Reduzir', key: 'Ctrl+-', icon: 'zoom-out', run: () => setZoom(Features.get<number>('window.zoomLevel') - 1) },
+  { id: 'zoomInPlus', label: 'Exibir: Ampliar', key: 'Ctrl++', run: () => zoomStep(1) },
+  { id: 'zoomInShift', label: 'Exibir: Ampliar', key: 'Ctrl+Shift++', run: () => zoomStep(1) },
+  { id: 'zoomOut', label: 'Exibir: Reduzir', key: 'Ctrl+-', icon: 'zoom-out', run: () => zoomStep(-1) },
   { id: 'zoomReset', label: 'Exibir: Redefinir Zoom', key: 'Ctrl+0', icon: 'screen-normal', run: () => setZoom(0) }, // also Ctrl+NumPad0 (same e.key)
   { id: 'settings', label: 'Preferências: Abrir Configurações', key: 'Ctrl+,', icon: 'settings-gear', run: () => Editor.openSettings() },
   { id: 'runFile', label: 'Ruby: Executar Arquivo', key: 'Ctrl+F5', icon: 'play', run: () => Ruby.runFile() },
@@ -177,15 +177,16 @@ function menuItem(e: Entry): MenuItem | null {
 // ---------- layout ----------
 
 function showView(view: string) {
-  $('#sidebar').hidden = false;
-  $('#sash-side').hidden = false;
+  toggleSidebar(true);
   document.querySelectorAll<HTMLElement>('.ab-item[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
   document.querySelectorAll<HTMLElement>('#sidebar .view').forEach(el => { el.hidden = el.id !== `view-${view}`; });
 }
 
-function toggleSidebar(visible = $('#sidebar').hidden) {
+function toggleSidebar(visible = !!$('#sidebar').hidden) {
   $('#sidebar').hidden = !visible;
   $('#sash-side').hidden = !visible;
+  $('#tb-left').classList.toggle('active', visible);
+  $('#tb-left').setAttribute('aria-pressed', String(visible));
 }
 
 function makeSash(sash: HTMLElement, onMove: (e: MouseEvent) => void) {
@@ -271,17 +272,24 @@ function initStatusBar() {
 }
 
 // Window zoom like VS Code: window.zoomLevel, factor 1.2^level. The status bar shows it while it is not 100%.
-// Chromium clamps the zoom factor at 0.25, so level -8 (1.2^-8 ≈ 23%) really shows 25%.
-const zoomPercent = () => `${Math.round(Math.max(0.25, 1.2 ** Features.get<number>('window.zoomLevel')) * 100)}%`;
+const zoomPercent = () => `${Math.round(1.2 ** Features.get<number>('window.zoomLevel') * 100)}%`;
 let zoomPopup: HTMLElement | undefined;
 
 function setZoom(level: number) {
-  Features.set('window.zoomLevel', Math.min(8, Math.max(-8, level)));
-  onSettingChange('window.zoomLevel');
+  Features.set('window.zoomLevel', level);
+  applyZoom();
+  void api.saveSettings(Features.all());
+}
+
+// A fractional level (min 80%, or typed in Settings) snaps back to the integer scale: 80% -> 83% -> 100%.
+function zoomStep(d: 1 | -1) {
+  const level = Features.get<number>('window.zoomLevel');
+  setZoom(d > 0 ? Math.floor(level) + 1 : Math.ceil(level) - 1);
 }
 
 function applyZoom() {
-  const level = Features.get<number>('window.zoomLevel');
+  const level = Math.min(8, Math.max(Features.MIN_ZOOM, Features.get<number>('window.zoomLevel'))); // also fixes an out-of-range saved value
+  Features.set('window.zoomLevel', level);
   api.setZoom(level);
   const el = $('#sb-zoom');
   el.hidden = !level && !zoomPopup; // the open popup stays anchored to a visible item
@@ -309,9 +317,8 @@ function toggleZoomPopup() {
     b.onclick = run;
     return b;
   };
-  const step = (d: number) => () => setZoom(Features.get<number>('window.zoomLevel') + d);
   zoomPopup = h('div', { className: 'menu-popup zoom-popup', role: 'dialog', ariaLabel: 'Zoom da janela' },
-    button('−', 'Reduzir (Ctrl+-)', step(-1)), h('span', { ariaLive: 'polite' }, zoomPercent()), button('+', 'Ampliar (Ctrl+=)', step(1)), button('Redefinir', 'Redefinir zoom (Ctrl+0)', () => setZoom(0)));
+    button('−', 'Reduzir (Ctrl+-)', () => zoomStep(-1)), h('span', { ariaLive: 'polite' }, zoomPercent()), button('+', 'Ampliar (Ctrl+=)', () => zoomStep(1)), button('Redefinir', 'Redefinir zoom (Ctrl+0)', () => setZoom(0)));
   zoomPopup.tabIndex = -1; // a click on the % text keeps focus here, so Esc still works
   const previous = document.activeElement as HTMLElement | null;
   zoomPopup.onkeydown = e => {
@@ -595,6 +602,7 @@ async function boot() {
   $('#branch-btn').onclick = () => void Git.switchBranch();
   Git.onDidRefresh(() => { $('#branch-btn').hidden = !Git.branch; $('#branch-label').textContent = Git.branch; });
   $('#tb-run').onclick = () => void Ruby.runFile();
+  $('#tb-left').onclick = () => toggleSidebar();
   $('#tb-terminal').onclick = () => togglePanel();
   $('#tb-settings').onclick = () => Editor.openSettings();
   makeSash($('#sash-side'), e => { $('#sidebar').style.width = `${Math.min(600, Math.max(170, e.clientX - $('#sidebar').getBoundingClientRect().left - 4))}px`; });

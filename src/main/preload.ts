@@ -65,7 +65,7 @@ const api = {
   watchFolder: invoke<void, [root: string]>('watchFolder'),
   onFsChange: on<[paths: string[]]>('fsChange'),
   setTitleBarOverlay: (color: string, symbolColor: string) => ipcRenderer.send('setTitleBarOverlay', color, symbolColor), // #rrggbb or #rrggbbaa
-  setZoom: (level: number) => ipcRenderer.send('setZoom', level), // Chromium zoom level, factor 1.2^level; clamped to -8..8
+  setZoom: (level: number) => ipcRenderer.send('setZoom', level), // Chromium zoom level, factor 1.2^level; clamped to log1.2(0.8)..8 (80% minimum)
   windowMaterial: invoke<'acrylic' | 'vibrancy' | 'transparent' | 'none'>('windowMaterial'), // 'none': use solid backgrounds
   windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.send('windowControl', action), // maximize toggles restore
   relaunch: () => ipcRenderer.send('relaunch'), // goes through onCloseRequest/confirmClose like a normal close

@@ -363,10 +363,10 @@ const overlayHeight = () => Math.round(35 * zoomFactor);
 ipcMain.on('setTitleBarOverlay', (_e, color: unknown, symbolColor: unknown) => {
   if (process.platform !== 'darwin' && nativeControls && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: overlayHeight() });
 });
-// Chromium zoom level (factor 1.2^level), clamped like VS Code's window.zoomLevel.
+// Chromium zoom level (factor 1.2^level), clamped to 80%..1.2^8.
 ipcMain.on('setZoom', (_e, level: unknown) => {
   if (typeof level !== 'number' || !Number.isFinite(level) || !win || win.isDestroyed()) return;
-  win.webContents.setZoomLevel(Math.min(8, Math.max(-8, level)));
+  win.webContents.setZoomLevel(Math.min(8, Math.max(Math.log(0.8) / Math.log(1.2), level)));
   zoomFactor = win.webContents.getZoomFactor();
   if (process.platform !== 'darwin' && nativeControls) win.setTitleBarOverlay({ height: overlayHeight() });
 });
