@@ -1,4 +1,7 @@
 /* VS Code "Dark Modern" palette (see docs/SPEC.md). */
+/* JetBrains Mono (OFL 1.1, assets/fonts/OFL.txt): default editor font, the same as RubyMine's. */
+@font-face { font-family: 'JetBrains Mono'; font-weight: 400; src: url('../../assets/fonts/JetBrainsMono-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 700; src: url('../../assets/fonts/JetBrainsMono-Bold.woff2') format('woff2'); }
 :root {
   --bar: #181818; /* card background; translucent over acrylic (see data-material) */
   --chrome: #0C0C0D; /* window background behind the cards */
@@ -234,7 +237,8 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 
 #panel { height: 220px; flex: none; overflow: hidden; display: flex; flex-direction: column; }
 .panel-header { height: 38px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
-.panel-tab { font-size: 11px; padding: 6px 8px 4px; color: var(--muted); cursor: pointer; border-bottom: 1px solid transparent; }
+.panel-tab { font-size: 11px; padding: 6px 8px 4px; color: var(--muted); cursor: pointer; border-bottom: 1px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.panel-header > :not(.panel-tab) { flex-shrink: 0; } /* só as abas encolhem; ações ficam visíveis */
 .panel-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .spacer { flex: 1; }
 .codicon.disabled { opacity: .4; pointer-events: none; }
@@ -366,6 +370,9 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
   position: fixed; z-index: 71; min-width: 260px; padding: 6px; background: var(--widget);
   border: 1px solid var(--input-border); border-radius: 12px; box-shadow: 0 8px 28px #00000080;
 }
+/* Zoom popup over the status bar item: −, percentage, +, Redefinir */
+.zoom-popup { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.zoom-popup span { min-width: 44px; text-align: center; }
 .menu-item { display: flex; align-items: center; gap: 24px; height: 28px; padding: 0 10px; border-radius: 8px; cursor: default; white-space: nowrap; }
 .menu-item .label { flex: 1; }
 .menu-item .desc { margin-left: 0; }

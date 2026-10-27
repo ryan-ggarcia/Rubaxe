@@ -59,6 +59,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
 - [x] Tema escuro e claro (`workbench.theme`) com destaque vermelho Ruby (#CC342D) e cantos arredondados, também no Monaco, xterm e barra de título
 - [x] Auto save: 1 s após a última edição e ao trocar de aba/perder o foco; não formata (só Ctrl+S) e não sobrescreve edição externa (com aba suja + edição externa o auto save fica suspenso; Ctrl+S grava)
+- [x] Zoom da janela como no VS Code (`window.zoomLevel`, fator 1,2^nível, -8 a 8): Ctrl+= / Ctrl++ / Ctrl+-, Ctrl+0 redefine; item na Status Bar com −/+/Redefinir enquanto ≠ 100%
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
 
 ### Fase 2 — Arquivos, navegação e busca ★
@@ -109,7 +110,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 ### Fase 6 — Configurações ★
 - [x] Editor de configurações no estilo VS Code (aba própria, busca, Ctrl+,)
-- [x] Gerais: caminho do Ruby, comando do Ruby LSP, framework de teste, fonte, tab, minimapa, quebra de linha, formatar ao salvar
+- [x] Gerais: caminho do Ruby, comando do Ruby LSP, framework de teste, fonte (`editor.fontFamily`, padrão JetBrains Mono embutida, OFL 1.1), tamanho da fonte, tab, minimapa, quebra de linha, formatar ao salvar
 - [x] **Registro de funcionalidades**: cada função do RubyMine aparece com interruptor; implementadas podem ser ligadas/desligadas, as demais aparecem como "planejado"
 - [x] Persistência em JSON no diretório do usuário
 

@@ -67,6 +67,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
 
 const SETTINGS: Setting[] = [
   ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
+  ['Aparência', 'window.zoomLevel', 'Nível de zoom da janela: 0 = 100%, cada passo multiplica por 1,2 (1 = 120%, -1 ≈ 83%). De -8 a 8. Atalhos: Ctrl+= / Ctrl+- / Ctrl+0.', 'number', 0],
   ['Aparência', 'window.controls', 'Botões da janela (fora do macOS): "nativos" usa os do sistema; "mac" desenha círculos coloridos à esquerda. Reinicia o Rubaxe ao mudar.', ['nativos', 'mac'], 'nativos'],
   ['Aparência', 'window.transparent', 'Janela transparente (só Linux): mostra a área de trabalho atrás da janela. O Linux não desfoca sozinho: para o desfoque estilo macOS, instale a extensão Blur my Shell, coloque rubaxe na lista de Aplicativos e desligue a Opacidade dinâmica (senão o desfoque some quando a janela está em foco). Usa os botões coloridos do Rubaxe. Sem sombra; para redimensionar, arraste bem rente à borda (ou use Super + arrastar com o botão do meio). Reinicia o Rubaxe ao mudar.', 'boolean', false],
   ['Ruby', 'ruby.path', 'Comando ou caminho do interpretador Ruby.', 'string', 'ruby'],
@@ -78,6 +79,7 @@ const SETTINGS: Setting[] = [
   ['Terminal', 'terminal.shell', 'Perfil do terminal integrado: nome (ex.: Git Bash) ou caminho do shell. Padrão: PowerShell no Windows, $SHELL no Linux/macOS.', 'string', ''],
   ['Editor', 'files.autoSave', 'Salvar automaticamente 1 s depois de editar, ao sair do editor e ao trocar de aba.', 'boolean', true],
   ['Editor', 'editor.fontSize', 'Tamanho da fonte.', 'number', 14],
+  ['Editor', 'editor.fontFamily', 'Fonte do editor. Padrão: JetBrains Mono, a mesma do RubyMine.', 'string', "'JetBrains Mono', Consolas, 'Courier New', monospace"],
   ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
   ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],
   ['Editor', 'editor.minimap', 'Mostrar minimapa.', 'boolean', true],
@@ -116,12 +118,13 @@ function controlFor(key: string, type: Setting[3], changed: (key: string, value:
     select.onchange = () => { changed(key, select.value); };
     return select;
   }
-  const input = h('input', { className: 'input', type: type === 'number' ? 'number' : 'text', value: String(settings[key]) });
+  const input = h('input', { className: 'input', name: key, type: type === 'number' ? 'number' : 'text', value: String(settings[key]) });
   input.onchange = () => {
     const v = type === 'number' ? Number(input.value) : input.value.trim();
     // Empty or zero would make the editor unusable (font size 0); keep the last good value.
-    // (empty text is fine when the default is empty: it means "use the default")
-    if (type === 'number' ? !(Number(v) > 0) : !v && SETTINGS.find(s => s[1] === key)![4] !== '') { input.value = String(settings[key]); return; }
+    // (empty text is fine when the default is empty: it means "use the default"; the zoom level is 0 = 100% and may be negative)
+    const bad = key === 'window.zoomLevel' ? !(input.value.trim() && Math.abs(Number(v)) <= 8) : type === 'number' ? !(Number(v) > 0) : !v && SETTINGS.find(s => s[1] === key)![4] !== '';
+    if (bad) { input.value = String(settings[key]); return; }
     changed(key, v);
   };
   return input;

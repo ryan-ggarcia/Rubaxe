@@ -46,6 +46,12 @@ const commands: Command[] = [
   { id: 'problems', label: 'Exibir: Problemas', key: 'Ctrl+Shift+M', icon: 'warning', run: () => Panel.show('problems') },
   { id: 'output', label: 'Exibir: Saída', key: 'Ctrl+Shift+U', icon: 'output', run: () => Panel.show('output') },
   { id: 'mdPreview', label: 'Markdown: Abrir Prévia', key: 'Ctrl+Shift+V', icon: 'open-preview', when: () => Editor.isMarkdown(), run: () => Editor.openPreview() },
+  { id: 'zoomIn', label: 'Exibir: Ampliar', key: 'Ctrl+=', icon: 'zoom-in', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
+  // Ctrl++ = numeric keypad (or a layout with an unshifted +); Ctrl+Shift++ = Ctrl+Shift+= on US/ABNT layouts.
+  { id: 'zoomInPlus', label: 'Exibir: Ampliar', key: 'Ctrl++', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
+  { id: 'zoomInShift', label: 'Exibir: Ampliar', key: 'Ctrl+Shift++', run: () => setZoom(Features.get<number>('window.zoomLevel') + 1) },
+  { id: 'zoomOut', label: 'Exibir: Reduzir', key: 'Ctrl+-', icon: 'zoom-out', run: () => setZoom(Features.get<number>('window.zoomLevel') - 1) },
+  { id: 'zoomReset', label: 'Exibir: Redefinir Zoom', key: 'Ctrl+0', icon: 'screen-normal', run: () => setZoom(0) }, // also Ctrl+NumPad0 (same e.key)
   { id: 'settings', label: 'Preferências: Abrir Configurações', key: 'Ctrl+,', icon: 'settings-gear', run: () => Editor.openSettings() },
   { id: 'runFile', label: 'Ruby: Executar Arquivo', key: 'Ctrl+F5', icon: 'play', run: () => Ruby.runFile() },
   { id: 'runTests', label: 'Ruby: Executar Testes do Arquivo', key: 'Ctrl+Shift+F10', icon: 'beaker', run: () => Ruby.runTests() },
@@ -255,7 +261,72 @@ function initStatusBar() {
   Editor.editor.onDidChangeCursorPosition(update);
   Editor.onDidChange(update);
   update();
+  const zoom = statusItem('sb-zoom', 'right', () => toggleZoomPopup());
+  zoom.role = 'button';
+  zoom.tabIndex = 0;
+  zoom.onmousedown = e => e.preventDefault(); // a click keeps focus where it was, so Esc can return there
+  zoom.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); zoom.click(); } };
+  window.addEventListener('mousedown', e => { if (zoomPopup && !zoomPopup.contains(e.target as Node) && !zoom.contains(e.target as Node)) toggleZoomPopup(); }, true);
   setStatus($('#sb-lsp'), 'circle-slash', 'Ruby LSP', 'Abra uma pasta para iniciar o Ruby LSP');
+}
+
+// Window zoom like VS Code: window.zoomLevel, factor 1.2^level. The status bar shows it while it is not 100%.
+// Chromium clamps the zoom factor at 0.25, so level -8 (1.2^-8 ≈ 23%) really shows 25%.
+const zoomPercent = () => `${Math.round(Math.max(0.25, 1.2 ** Features.get<number>('window.zoomLevel')) * 100)}%`;
+let zoomPopup: HTMLElement | undefined;
+
+function setZoom(level: number) {
+  Features.set('window.zoomLevel', Math.min(8, Math.max(-8, level)));
+  onSettingChange('window.zoomLevel');
+}
+
+function applyZoom() {
+  const level = Features.get<number>('window.zoomLevel');
+  api.setZoom(level);
+  const el = $('#sb-zoom');
+  el.hidden = !level && !zoomPopup; // the open popup stays anchored to a visible item
+  setStatus(el, level > 0 ? 'zoom-in' : 'zoom-out', zoomPercent(), 'Zoom da janela');
+  el.ariaLabel = `Zoom da janela: ${zoomPercent()}`;
+  if (zoomPopup) zoomPopup.querySelector('span')!.textContent = zoomPercent();
+  const input = document.querySelector<HTMLInputElement>('input[name="window.zoomLevel"]'); // open Settings tab
+  if (input) input.value = String(level);
+}
+
+// Like a menu: focus landing anywhere else (Tab, including Tab leaving the document and coming back) closes it.
+const zoomFocusIn = (e: FocusEvent) => { if (zoomPopup && !zoomPopup.contains(e.target as Node) && !$('#sb-zoom').contains(e.target as Node)) closeZoomPopup(); };
+
+function closeZoomPopup() {
+  document.removeEventListener('focusin', zoomFocusIn);
+  zoomPopup?.remove();
+  zoomPopup = undefined;
+  $('#sb-zoom').hidden = !Features.get<number>('window.zoomLevel');
+}
+
+function toggleZoomPopup() {
+  if (zoomPopup) return closeZoomPopup();
+  const button = (text: string, label: string, run: () => void) => {
+    const b = h('button', { className: 'button secondary', title: label, ariaLabel: label }, text);
+    b.onclick = run;
+    return b;
+  };
+  const step = (d: number) => () => setZoom(Features.get<number>('window.zoomLevel') + d);
+  zoomPopup = h('div', { className: 'menu-popup zoom-popup', role: 'dialog', ariaLabel: 'Zoom da janela' },
+    button('−', 'Reduzir (Ctrl+-)', step(-1)), h('span', { ariaLive: 'polite' }, zoomPercent()), button('+', 'Ampliar (Ctrl+=)', step(1)), button('Redefinir', 'Redefinir zoom (Ctrl+0)', () => setZoom(0)));
+  zoomPopup.tabIndex = -1; // a click on the % text keeps focus here, so Esc still works
+  const previous = document.activeElement as HTMLElement | null;
+  zoomPopup.onkeydown = e => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    closeZoomPopup();
+    const item = $('#sb-zoom');
+    (item.hidden ? previous : item)?.focus();
+  };
+  document.addEventListener('focusin', zoomFocusIn);
+  const r = $('#sb-zoom').getBoundingClientRect();
+  zoomPopup.style.right = `${window.innerWidth - r.right}px`;
+  zoomPopup.style.bottom = `${window.innerHeight - r.top + 4}px`;
+  document.body.append(zoomPopup);
+  zoomPopup.querySelector('button')!.focus();
 }
 
 async function refreshInterpreter() {
@@ -369,6 +440,7 @@ function onSettingChange(key: string) {
   if (key === 'features.diagnostics') Lsp.refreshDiagnostics();
   if (key === 'features.documentSymbols') void renderOutline();
   if (key === 'workbench.theme') applyTheme();
+  if (key === 'window.zoomLevel') applyZoom();
   if (key === 'window.controls' || key === 'window.transparent') { notify('Reiniciar para aplicar'); void api.saveSettings(Features.all()).then(() => api.relaunch()); }
   if (key === 'features.inspections') Ruby.inspectAll();
   if (key === 'ruby.lspPath' && ws.root) void startLsp();
@@ -502,6 +574,7 @@ async function boot() {
   Git.initGit(path => void openFolder(path));
   RightPanel.initRightPanel();
   initStatusBar();
+  applyZoom();
   renderRubyView();
   $('#gems-refresh').onclick = e => { e.stopPropagation(); void Ruby.loadGems($('#gems-body')); };
   $('#gems-header').onclick = () => { const b = $('#gems-body'); b.hidden = !b.hidden; $('#gems-header').firstElementChild!.className = `codicon codicon-chevron-${b.hidden ? 'right' : 'down'}`; };
@@ -531,7 +604,7 @@ async function boot() {
   window.addEventListener('keydown', e => {
     const k = eventKey(e, api.platform);
     // In the terminal everything belongs to the shell (readline) except these IDE keys (Ctrl+Shift+V stays the terminal's paste).
-    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
+    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c|=|\+|-|0)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
     const cmd = keymap.get(k);
     if (!cmd || cmd.when?.() === false) return;
     e.preventDefault();

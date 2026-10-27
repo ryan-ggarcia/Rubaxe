@@ -40,6 +40,7 @@ const tabFor = (model: M.editor.ITextModel) => tabs.find(t => t.model === model)
 export function editorOptions(): M.editor.IEditorOptions {
   return {
     fontSize: Features.get<number>('editor.fontSize'),
+    fontFamily: Features.get<string>('editor.fontFamily'),
     minimap: { enabled: Features.get<boolean>('editor.minimap') },
     wordWrap: Features.get<boolean>('editor.wordWrap') ? 'on' : 'off',
     formatOnType: true,
@@ -51,13 +52,15 @@ export function createEditor(settingsRenderer: (container: HTMLElement) => void,
   renderPreview = previewRenderer;
   editor = monaco.editor.create($('#editor'), {
     model: null, theme: 'rubaxe-dark', automaticLayout: true, fixedOverflowWidgets: true,
-    fontFamily: "Consolas, 'Courier New', monospace", bracketPairColorization: { enabled: true },
+    bracketPairColorization: { enabled: true },
     guides: { bracketPairs: true }, renderWhitespace: 'selection', stickyScroll: { enabled: true }, 'semanticHighlighting.enabled': true,
     ...editorOptions(),
   });
   diffEditor = monaco.editor.createDiffEditor($('#diff-editor'), {
-    theme: 'rubaxe-dark', automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: "Consolas, 'Courier New', monospace", ...editorOptions(),
+    theme: 'rubaxe-dark', automaticLayout: true, readOnly: true, originalEditable: false, ...editorOptions(),
   });
+  // Monaco measures the font on creation, but the web font loads lazily: measure again once it is in, or the cursor drifts.
+  void Promise.all(['14px', 'bold 14px'].map(f => document.fonts.load(`${f} "JetBrains Mono"`))).then(() => monaco.editor.remeasureFonts());
   monaco.editor.registerEditorOpener({ openCodeEditor: (_source, resource, selection) => { void openUri(resource, selection); return true; } });
   // Rename and quick-fixes can edit files without a tab: give them one so the change can be seen and saved.
   editor.onDidBlurEditorText(() => autoSave(active));

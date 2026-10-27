@@ -358,8 +358,17 @@ ipcMain.on('lspSend', (_e, msg: unknown) => { lsp?.stdin?.write(frame(msg)); });
 // #rrggbbaa: over acrylic the overlay must be see-through.
 const hex = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c);
 // macOS has no titleBarOverlay (traffic lights instead); in 'mac' mode there is none to recolor (it would throw).
+let zoomFactor = 1; // the renderer's 35px title bar scales with the page zoom; the native overlay must follow
+const overlayHeight = () => Math.round(35 * zoomFactor);
 ipcMain.on('setTitleBarOverlay', (_e, color: unknown, symbolColor: unknown) => {
-  if (process.platform !== 'darwin' && nativeControls && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: 35 });
+  if (process.platform !== 'darwin' && nativeControls && hex(color) && hex(symbolColor) && win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor, height: overlayHeight() });
+});
+// Chromium zoom level (factor 1.2^level), clamped like VS Code's window.zoomLevel.
+ipcMain.on('setZoom', (_e, level: unknown) => {
+  if (typeof level !== 'number' || !Number.isFinite(level) || !win || win.isDestroyed()) return;
+  win.webContents.setZoomLevel(Math.min(8, Math.max(-8, level)));
+  zoomFactor = win.webContents.getZoomFactor();
+  if (process.platform !== 'darwin' && nativeControls) win.setTitleBarOverlay({ height: overlayHeight() });
 });
 ipcMain.handle('windowMaterial', () => material);
 ipcMain.on('windowControl', (_e, action: unknown) => {
