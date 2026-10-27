@@ -99,6 +99,9 @@ async function loadCoverage(dir: string) {
 
 const pct = (a: number, b: number) => `${b ? Math.round((a / b) * 100) : 100}%`;
 
+// Clear button and folder switch: results and coverage belong to one project.
+export function resetTests() { results = []; hideCoverage(); renderTree(); }
+
 export function hideCoverage() {
   coverage.clear();
   repaintAll();
@@ -219,7 +222,7 @@ export function initTests() {
     action('run-all', 'Executar todos os testes', () => Ruby.runAllTests()),
     action('debug-rerun', 'Reexecutar falhas', rerunFailed),
     action('run-coverage', 'Executar todos com cobertura', () => runWithCoverage(() => Ruby.runAllTests())),
-    action('clear-all', 'Limpar resultados e cobertura', () => { results = []; hideCoverage(); renderTree(); }),
+    action('clear-all', 'Limpar resultados e cobertura', resetTests),
   );
   Editor.editor.onMouseDown(e => {
     const el = e.target.element as HTMLElement | null;

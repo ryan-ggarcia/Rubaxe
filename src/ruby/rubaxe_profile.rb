@@ -1,14 +1,13 @@
 # Loaded by Rubaxe through RUBYOPT: profiles the program and writes per-method times as JSON to RUBAXE_PROFILE.
 # RUBAXE_PROFILE_MODE=trace instruments every Ruby call (exact counts, slower); otherwise the stack is sampled:
 # with stackprof where it builds (Linux/macOS), else with a thread reading the main thread's backtrace.
-require 'json'
-
 module RubaxeProfile
   OUT = ENV.fetch('RUBAXE_PROFILE')
 
   def self.now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
   def self.write(rows, mode, samples = nil)
+    require 'json' # only now: loading it early would activate a json gem before the project's Bundler setup
     rows = rows.sort_by { |r| -r[:self_ms] }.first(300)
     File.write(OUT, JSON.generate(mode: mode, samples: samples, rows: rows))
   end

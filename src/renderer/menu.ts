@@ -47,8 +47,9 @@ export function initMenubar(menus: Menu[], button: HTMLElement) {
     popup = h('div', { className: 'menu-popup', role: 'menu' }, ...items.map((_, j) => rows[j] ?? h('div', { className: 'menu-sep', role: 'separator' })));
     const r = titles[i].getBoundingClientRect();
     popup.style.left = `${bar.getBoundingClientRect().right + 4}px`;
-    popup.style.top = `${r.top - 6}px`;
     document.body.append(popup);
+    // Long menus in a short window: shift up to the bottom edge; .menu-popup's max-height scrolls the rest.
+    popup.style.top = `${Math.max(4, Math.min(r.top - 6, innerHeight - popup.offsetHeight - 4))}px`;
   };
 
   titles.forEach((t, i) => {
@@ -76,7 +77,7 @@ export function initMenubar(menus: Menu[], button: HTMLElement) {
     const step = (d: number) => {
       for (let n = 1; n <= items.length; n++) {
         const j = (((sel < 0 ? (d > 0 ? -1 : 0) : sel) + d * n) % items.length + items.length) % items.length;
-        if (items[j]) return select(j);
+        if (items[j]) { select(j); return rows[j]!.scrollIntoView({ block: 'nearest' }); }
       }
     };
     const move = (d: number) => open((openIdx + d + menus.length) % menus.length);

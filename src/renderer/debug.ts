@@ -4,6 +4,7 @@ import { $, api, basename, h, icon, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
+import { ANSI } from './paths.ts';
 import { prompt } from './quick-input.ts';
 
 interface Bp { line: number; condition?: string }
@@ -38,7 +39,7 @@ function req(command: string, args: unknown = {}): Promise<any> {
 }
 
 function log(text: string) {
-  consoleText = (consoleText + text.replace(/\x1b\[[0-9;]*m/g, '')).slice(-200_000);
+  consoleText = (consoleText + text.replace(ANSI, '')).slice(-200_000);
   const pre = $('#debug-console');
   pre.textContent = consoleText;
   pre.scrollTop = pre.scrollHeight;

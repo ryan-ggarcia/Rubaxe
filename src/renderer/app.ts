@@ -373,6 +373,7 @@ async function openFolder(path?: string) {
   ws.isRails = await api.exists(abs('config/application.rb')) && await api.exists(abs('bin/rails'));
   Rails.resetRails();
   resetExplorer();
+  Tests.resetTests();
   document.title = `${basename(target)} — Rubaxe`;
   $('#folder-label').textContent = basename(target);
   Features.set('window.lastFolder', target);
@@ -387,6 +388,23 @@ async function openFolder(path?: string) {
   void Ruby.loadGems($('#gems-body'));
   RightPanel.schedule();
 }
+
+// `rubaxe <path>`, like `code`: a folder becomes the workspace (unless already open); a file opens in the current
+// workspace when inside it, else in its parent folder, and only if the user didn't cancel that switch.
+async function openTarget(path: string, isFile: boolean) {
+  if (!isFile) { if (relativeTo(path, ws.root + ws.sep) !== '') await openFolder(path); return; }
+  const inside = () => !!ws.root && relativeTo(ws.root, path) !== undefined;
+  if (!inside()) {
+    const i = path.lastIndexOf(ws.sep);
+    await openFolder(path.slice(0, i === path.indexOf(ws.sep) ? i + 1 : i)); // keep the separator of a drive root
+  }
+  if (inside()) await Editor.openFile(path);
+}
+
+// Opens run one at a time so a second `rubaxe <path>` waits for the unsaved-changes question of the first.
+let opening = Promise.resolve();
+const inOrder = (run: () => Promise<void>) =>
+  opening = opening.then(run).catch(e => notify(`Falha ao abrir: ${(e as Error).message}`, 'error'));
 
 // ---------- quick open ----------
 
@@ -632,8 +650,13 @@ async function boot() {
   Panel.toggle(false);
   Panel.refreshProblems();
   await renderExplorer();
-  const last = Features.get<string | undefined>('window.lastFolder');
-  if (last && await api.exists(last)) await openFolder(last);
+  api.onOpenPath((path, isFile) => void inOrder(() => openTarget(path, isFile)));
+  await inOrder(async () => {
+    const start = await api.initialPath();
+    const last = Features.get<string | undefined>('window.lastFolder');
+    if (start) await openTarget(start.path, start.isFile);
+    else if (last && await api.exists(last)) await openFolder(last);
+  });
 }
 
 const amd = (window as unknown as { require: { config(c: unknown): void; (deps: string[], cb: () => void): void } }).require;

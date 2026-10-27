@@ -4,6 +4,7 @@ export interface DirEntry { name: string; path: string; dir: boolean }
 export interface SearchHit { file: string; line: number; col: number; len: number; text: string }
 export interface ExecResult { code: number | null; out: string }
 // ready: installUpdate restarts into it; manual (macOS): installUpdate opens the Release page.
+export interface OpenTarget { path: string; isFile: boolean } // absolute and existing when checked; isFile: open the parent folder, then the file
 export interface UpdateStatus { state: 'available' | 'downloading' | 'ready' | 'manual' | 'error' | 'none'; version?: string; percent?: number; message?: string }
 
 const invoke = <R, A extends unknown[] = []>(ch: string) => (...args: A) => ipcRenderer.invoke(ch, ...args) as Promise<R>;
@@ -73,6 +74,10 @@ const api = {
   onUpdateStatus: on<[status: UpdateStatus]>('updateStatus'),
   installUpdate: () => ipcRenderer.send('installUpdate'), // 'ready' goes through onCloseRequest/confirmClose like relaunch
   checkForUpdates: invoke<void>('checkForUpdates'), // resolves when the check ends; the result arrives via onUpdateStatus
+  // Command line (`rubaxe <path>`). Register onOpenPath first, then await initialPath once at startup (null: use
+  // window.lastFolder); every later `rubaxe <path>` arrives through onOpenPath, the window already focused.
+  initialPath: invoke<OpenTarget | null>('initialPath'),
+  onOpenPath: on<[path: string, isFile: boolean]>('openPath'),
 };
 
 export type RubaxeApi = typeof api;

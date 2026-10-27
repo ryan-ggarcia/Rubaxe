@@ -5,7 +5,7 @@ import { pluralize } from './paths.ts';
 import { moveEntry, refreshWorkspace } from './explorer.ts';
 import * as Lsp from './lsp-client.ts';
 import * as Features from './features.ts';
-import { implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsRenameText, railsResource, railsReview, relativeTo, serverPort, testCandidates, underscore } from './paths.ts';
+import { fixtureAccessor, implCandidates, isTest, localeKeys, needsPluralConfirm, parseRoutes, railsRelated, railsRenamePlan, railsRenameText, railsResource, railsReview, relativeTo, serverPort, testCandidates, underscore } from './paths.ts';
 import { prompt, quickPick, type QuickItem } from './quick-input.ts';
 import * as Ruby from './ruby.ts';
 import * as Panel from './panel.ts';
@@ -85,13 +85,15 @@ export async function relatedFiles(): Promise<[group: string, files: { name: str
   return Object.values(GROUP).filter((g, i, all) => all.indexOf(g) === i && out.has(g)).map(g => [g, out.get(g)!]);
 }
 
-// Rename Post -> Article across models, controllers, helpers, views and tests. Constants go through the Ruby LSP
+// Rename Post -> Article across models, controllers, helpers, views, tests and fixtures. Constants go through the Ruby LSP
 // (so references elsewhere follow); files are moved with the explorer's rename. Tables, migrations and routes are only listed.
 export async function renameResource() {
   if (!ready('railsRename')) return;
   const rel = Editor.active?.path && relativeTo(ws.root, Editor.active.path);
   const res = rel ? railsResource(rel) : undefined;
   if (!rel || !res) return notify('Abra um model, controller, helper, view ou teste de um recurso Rails.');
+  // shortcut: namespaced resources are refused, upgrade when someone needs admin/... renames
+  if (res.ns) return notify(`Renomear recurso com namespace (${res.ns}${res.plural}) ainda não é suportado.`, 'error');
   if (Editor.tabs.some(t => t.dirty)) return notify('Salve os arquivos abertos antes de renomear o recurso.', 'error');
   const camel = await prompt('Novo nome do recurso, no singular e em CamelCase (ex.: Article)');
   if (!camel) return;
@@ -104,9 +106,11 @@ export async function renameResource() {
   if (!plan?.files.length) return notify('Nenhum arquivo do recurso encontrado.');
   const review = railsReview(await api.readFile(abs('config/routes.rb')).catch(() => ''), files, res.singular, res.plural);
   // Lowercase leftovers (helpers, ivars, params, partials) are rewritten only in the resource's own files.
+  const rewrite = (file: string, text: string) => plan.texts.includes(file)
+    ? railsRenameText(text, file.includes('/views/'), res.singular, res.plural, snake, plural) : fixtureAccessor(text, res.plural, plural);
   const texts: { file: string; count: number }[] = [];
-  for (const file of plan.texts) {
-    const r = railsRenameText(await api.readFile(abs(file)).catch(() => ''), file.includes('/views/'), res.singular, res.plural, snake, plural);
+  for (const file of [...plan.texts, ...plan.fixtureUsers]) {
+    const r = rewrite(file, await api.readFile(abs(file)).catch(() => ''));
     if (r.count) texts.push({ file, count: r.count });
   }
   const apply = async () => {
@@ -128,7 +132,7 @@ export async function renameResource() {
     for (const { file } of texts) {
       const path = abs(file);
       const text = await api.readFile(path).catch(() => undefined);
-      if (text !== undefined) await api.writeFile(path, railsRenameText(text, file.includes('/views/'), res.singular, res.plural, snake, plural).text);
+      if (text !== undefined) await api.writeFile(path, rewrite(file, text).text);
     }
     for (const f of plan.files) if (!await moveEntry(abs(f.from), abs(f.to))) return notify(`Parou em ${f.from}; revise o que já foi renomeado.`, 'error');
     await Editor.syncFromDisk();

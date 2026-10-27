@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { outermost, dropPlan, rangeBetween, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { ANSI, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -116,6 +116,21 @@ test('Rails rename text keeps the HTTP verb and method: :post', () => {
   assert.deepStrictEqual(plan.texts, ['app/controllers/posts_controller.rb', 'app/views/posts/_post.html.erb', 'app/views/posts/index.html.erb']);
 });
 
+test('Rails rename moves fixtures and renames the accessor in every test file', () => {
+  const files = ['app/models/post.rb', 'test/fixtures/posts.yml', 'test/fixtures/users.yml', 'test/controllers/posts_controller_test.rb', 'test/models/comment_test.rb', 'app/models/comment.rb'];
+  const plan = railsRenamePlan('app/models/post.rb', files, 'Article', 'articles')!;
+  assert.deepStrictEqual(plan.files.map(f => f.to), ['app/models/article.rb', 'test/controllers/articles_controller_test.rb', 'test/fixtures/articles.yml']);
+  assert.deepStrictEqual(plan.texts, ['test/controllers/posts_controller_test.rb']);
+  assert.deepStrictEqual(plan.fixtureUsers, ['test/models/comment_test.rb']);
+  assert.deepStrictEqual(fixtureAccessor('posts(:one) user_posts(:two) posts (:x)', 'posts', 'articles'), { text: 'articles(:one) user_posts(:two) posts (:x)', count: 1 });
+  assert.strictEqual(railsRenameText('@post = posts(:one)', false, 'post', 'posts', 'article', 'articles').text, '@article = articles(:one)');
+  assert.deepStrictEqual(railsRenamePlan('app/models/post.rb', ['app/models/post.rb', 'test/models/comment_test.rb'], 'Article', 'articles')!.fixtureUsers, []);
+});
+
+test('ANSI strips cursor and prompt escapes, not just colors', () => {
+  assert.strictEqual('\x1b[?25l\x1b[1G\x1b[K\x1b[32mok\x1b[0m\x1b]0;title\x07'.replace(ANSI, ''), 'ok');
+});
+
 test('markdown links and images resolve from the .md folder; unsafe targets do not', () => {
   const md = 'C:\\proj\\docs\\guide.md';
   assert.deepStrictEqual(mdTarget('SPEC.md', md, 'C:\\proj'), { path: 'C:\\proj\\docs\\SPEC.md' });
@@ -156,4 +171,16 @@ test('explorer multi-select: shift range, outermost items and drop targets', () 
   assert.strictEqual(dropPlan([w`C:\p\app`, w`C:\p\x.rb`], w`c:\p\app\models`, '\\', true), undefined); // into its own child
   assert.deepStrictEqual(dropPlan([w`C:\p\app\a.rb`, w`C:\p\b.rb`], w`C:\p`, '\\', true), [w`C:\p\app\a.rb`]); // b.rb is already there
   assert.deepStrictEqual(dropPlan(['/p/app2', '/p/app2/x'], '/p/app', '/', false), ['/p/app2']); // app2 is not under app
+});
+
+test('tabs sharing a file name show the folder that tells them apart', () => {
+  const w = String.raw;
+  // Monaco's fsPath lowercases the drive letter; the root keeps it.
+  assert.deepStrictEqual(tabDescriptions([w`c:\p\app\models\index.rb`, w`c:\p\app\controllers\index.rb`, w`c:\p\user.rb`, undefined], w`C:\p`, '\\'),
+    [w`…\models`, w`…\controllers`, '', '']);
+  assert.deepStrictEqual(tabDescriptions(['/p/index.rb', '/p/lib/index.rb', '/tmp/index.rb'], '/p', '/'), ['p', 'lib', '…/tmp']);
+  const views = ['articles', 'comments', 'user_posts'].map(d => `C:\\p\\app\\views\\${d}\\index.html.erb`);
+  assert.deepStrictEqual(tabDescriptions(views, w`C:\p`, '\\'), [w`…\articles`, w`…\comments`, w`…\user_posts`]);
+  // Same last folder: two segments needed; a folder that is a suffix of the other shows whole.
+  assert.deepStrictEqual(tabDescriptions(['/p/src/a/x/f.rb', '/p/lib/b/x/f.rb', '/p/x/f.rb'], '/p', '/'), ['…/a/x', '…/b/x', 'x']);
 });

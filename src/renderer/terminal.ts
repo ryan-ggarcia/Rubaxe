@@ -5,7 +5,7 @@ import { $, api, h, notify, ws } from './dom.ts';
 import * as Editor from './editor.ts';
 import * as Features from './features.ts';
 import * as Panel from './panel.ts';
-import { ipcMessage } from './paths.ts';
+import { ANSI, ipcMessage } from './paths.ts';
 import { quickPick } from './quick-input.ts';
 
 type Profile = { name: string; path: string; args: string[] };
@@ -137,7 +137,7 @@ export function initTerminal() {
     const t = terms.find(x => x.id === id);
     if (!t) return;
     t.xterm.write(data);
-    t.tail = (t.tail + data.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '')).slice(-2000);
+    t.tail = (t.tail + data.replace(ANSI, '')).slice(-2000);
     touch(t);
   });
   api.onPtyExit((id, code) => {

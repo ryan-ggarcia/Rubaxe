@@ -205,6 +205,9 @@ export function parseRakeTasks(out: string): { name: string; desc: string }[] {
 // Electron prefixes IPC rejections with "Error invoking remote method 'x': Error: "; users only need the reason.
 export const ipcMessage = (e: unknown) => (e as Error).message.replace(/^Error invoking remote method '\w+': (\w*Error: )?/, '');
 
+// ANSI escapes stripped from plain-text output: CSI (colors, cursor moves, `?25l`) and OSC (window titles).
+export const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g;
+
 // "Ctrl+Shift+P" style key of a keydown. Cmd counts as Ctrl on macOS. Backquote and, with Alt held, letters and
 // digits come from the physical key: Shift turns e.key into "~" and Option on macOS into "‰" and friends.
 export function eventKey(e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; key: string; code: string }, platform: string): string {
@@ -253,6 +256,28 @@ export function rangeBetween(order: string[], anchor: string, target: string): s
   return a < 0 || b < 0 ? [target] : order.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
+// Tabs whose files share a name show their folder (like VS Code): relative to the project root, the root's own name
+// for files right in it, the absolute folder outside it; '' for unique names and non-file tabs (undefined).
+// Only the fewest trailing folder segments that tell the group apart are shown, '…' + sep marking a cut.
+export function tabDescriptions(paths: (string | undefined)[], root: string, sep: string): string[] {
+  const name = (p: string) => p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1);
+  const folders = paths.map(p => {
+    if (!p) return [];
+    const rel = relativeTo(root, p);
+    if (rel === undefined) return p.slice(0, -name(p).length - 1).split(/[\\/]/);
+    return rel.includes('/') ? rel.split('/').slice(0, -1) : [name(root.replace(/[\\/]$/, ''))];
+  });
+  const tail = (f: string[], k: number) => f.slice(-k).join(sep);
+  return paths.map((p, i) => {
+    const group = p ? folders.filter((_, j) => paths[j] && name(paths[j]) === name(p)) : [];
+    if (group.length < 2) return '';
+    const segs = folders[i];
+    let k = 1;
+    while (k < segs.length && new Set(group.map(f => tail(f, k))).size < group.length) k++;
+    return (k < segs.length ? '…' + sep : '') + tail(segs, k);
+  });
+}
+
 // Gemfile.lock lists the standard gem as "    standard (1.2.3)".
 export const usesStandard = (lock: string) => /^ {4}standard \(/m.test(lock);
 
@@ -284,7 +309,8 @@ const simplePlural = (w: string) => /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies
 export const needsPluralConfirm = (snake: string) => pluralize(snake) !== simplePlural(snake);
 
 // `texts`: workspace-relative files (old paths) whose content gets the lowercase renames of railsRenameText.
-export interface RenamePlan { files: { from: string; to: string }[]; consts: { from: string; to: string; file: string }[]; texts: string[] }
+// `fixtureUsers`: other test/spec files where only the fixture accessor (`posts(:one)`) is renamed.
+export interface RenamePlan { files: { from: string; to: string }[]; consts: { from: string; to: string; file: string }[]; texts: string[]; fixtureUsers: string[] }
 
 // What changes when the resource of `rel` (Post -> Article) is renamed. `files` = workspace-relative '/' paths; only
 // files/folders that exist are listed. Tables, migrations and routes.rb are deliberately not part of the plan.
@@ -311,12 +337,14 @@ export function railsRenamePlan(rel: string, files: string[], newCamel: string, 
     [`spec/requests/${ns}${op}_spec.rb`, `spec/requests/${ns}${np}_spec.rb`, []],
     [`spec/helpers/${ns}${op}_helper_spec.rb`, `spec/helpers/${ns}${np}_helper_spec.rb`, []],
     [`spec/system/${ns}${op}_spec.rb`, `spec/system/${ns}${np}_spec.rb`, []],
+    [`test/fixtures/${op}.yml`, `test/fixtures/${np}.yml`, []],
+    [`spec/fixtures/${op}.yml`, `spec/fixtures/${np}.yml`, []],
   );
-  const plan: RenamePlan = { files: [], consts: [], texts: [] };
+  const plan: RenamePlan = { files: [], consts: [], texts: [], fixtureUsers: [] };
   for (const [from, to, consts] of rows) {
     if (!files.includes(from)) continue;
     plan.files.push({ from, to });
-    if (!from.startsWith('app/models/')) plan.texts.push(from);
+    if (!from.startsWith('app/models/') && !from.endsWith('.yml')) plan.texts.push(from);
     for (const [a, b] of consts) plan.consts.push({ from: a, to: b, file: from });
   }
   for (const base of ['app/views', 'spec/views']) {
@@ -331,7 +359,17 @@ export function railsRenamePlan(rel: string, files: string[], newCamel: string, 
     }
     plan.files.push({ from, to: `${base}/${ns}${np}` });
   }
+  for (const base of ['test', 'spec']) {
+    if (files.includes(`${base}/fixtures/${op}.yml`)) plan.fixtureUsers.push(...files.filter(f => f.startsWith(base + '/') && f.endsWith('.rb') && !plan.texts.includes(f)));
+  }
   return plan;
+}
+
+// Fixture accessor `posts(:one)` -> `articles(:one)`; the word boundary leaves `user_posts(:one)` alone.
+export function fixtureAccessor(text: string, op: string, np: string): { text: string; count: number } {
+  let count = 0;
+  text = text.replace(new RegExp(`\\b${op}\\(:`, 'g'), () => { count++; return `${np}(:`; });
+  return { text, count };
 }
 
 // Lowercase names left behind by a resource rename (post -> article), whole words only. Ruby files get the helper/ivar/param
@@ -350,6 +388,9 @@ export function railsRenameText(text: string, view: boolean, os: string, op: str
   sub(new RegExp(`\\b${os}:(?!:)`, 'g'), `${ns}:`);
   sub(new RegExp(`(?<!method\\s*[=:]\\s*):${os}\\b`, 'g'), `:${ns}`);
   sub(new RegExp(`\\b${camelize(os)}\\b`, 'g'), camelize(ns));
+  const f = fixtureAccessor(text, op, np);
+  text = f.text;
+  count += f.count;
   text = text.split('\n').map(l => /^\s*#/.test(l) ? l.replace(new RegExp(`/${op}\\b`, 'g'), () => { count++; return `/${np}`; }) : l).join('\n');
   if (view) {
     sub(new RegExp(`${notMethod}\\b${os}\\b`, 'g'), ns);

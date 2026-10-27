@@ -167,11 +167,13 @@ body.dragging * { pointer-events: none; }
 #tabs { height: 38px; flex: none; display: flex; padding: 4px 6px 0; gap: 2px; background: #00000033; overflow-x: auto; overflow-y: hidden; }
 #tabs::-webkit-scrollbar { height: 3px; }
 .tab {
-  display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; min-width: 120px; max-width: 220px;
+  display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; min-width: 120px; max-width: 300px;
   border-radius: 8px 8px 0 0; color: var(--muted); cursor: pointer;
 }
 .tab:hover { background: #FFFFFF0D; }
-.tab-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The folder description gives way before the name; close stays at the right edge. */
+.tab-label, .tab-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .close { margin-left: auto; }
 .tab { position: relative; flex: none; }
 .tab.active { background: var(--editor); color: #fff; }
 .tab.active::before { content: ''; position: absolute; top: 0; left: 8px; right: 8px; height: 2px; background: var(--accent); }
@@ -179,6 +181,9 @@ body.dragging * { pointer-events: none; }
 .tab:hover .close, .tab.active .close, .tab.dirty .close { visibility: visible; }
 .tab .close:hover { background: #FFFFFF1A; }
 .tab.dirty:not(:hover) .close::before { content: '\ea71'; }
+.tab-desc { flex-shrink: 1000; font-size: 0.9em; color: var(--muted); }
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
 #editor-area { flex: 1; min-height: 0; position: relative; display: flex; }
 #editor, #diff-editor, #settings-page, #preview-page, #welcome { flex: 1; min-width: 0; }
 .tab-action { position: sticky; right: 0; margin-left: auto; align-self: center; padding: 3px; border: none; border-radius: 4px; background: var(--bar); color: var(--muted); cursor: pointer; }
@@ -283,6 +288,7 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .scm-init { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 12px 20px; }
 .scm-init p { margin: 0 0 4px; color: var(--muted); line-height: 1.5; }
 #scm-body .scm-init .button { display: block; text-align: center; border-radius: 8px; }
+#explorer-tree { padding-bottom: 28px; } /* empty area to click (back to the root) or drop on, even with a long tree */
 .tree-row.drop-target, #explorer-tree.drop-target { background: var(--focus); box-shadow: inset 0 0 0 1px var(--accent); }
 .blame-text { color: #FFFFFF55 !important; font-style: italic; }
 
@@ -369,6 +375,7 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .menu-popup {
   position: fixed; z-index: 71; min-width: 260px; padding: 6px; background: var(--widget);
   border: 1px solid var(--input-border); border-radius: 12px; box-shadow: 0 8px 28px #00000080;
+  max-height: calc(100vh - 8px); overflow-y: auto;
 }
 /* Zoom popup over the status bar item: −, percentage, +, Redefinir */
 .zoom-popup { display: flex; align-items: center; gap: 6px; min-width: 0; }

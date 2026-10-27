@@ -12,7 +12,12 @@ import { quote } from './shell.ts';
 import { watchIgnored } from './watch.ts';
 import type { AppUpdater } from 'electron-updater';
 import { isNewer } from './version.ts';
-import type { SearchHit, UpdateStatus } from './preload.ts';
+import { argPaths } from './argv.ts';
+import type { OpenTarget, SearchHit, UpdateStatus } from './preload.ts';
+
+// `rubaxe .` with Rubaxe already open: this second process quits and the first gets its argv/cwd (additionalData, since
+// Electron may reorder or append to the argv it hands over). The lock is per userData: --user-data-dir instances stay apart.
+if (!app.requestSingleInstanceLock({ argv: process.argv, cwd: process.cwd() })) app.exit();
 
 const IGNORED = new Set(['.git', 'node_modules', 'tmp', 'log', '.bundle', 'coverage', '.ruby-lsp', 'vendor']);
 const MAX_FILES = 20000;
@@ -239,8 +244,12 @@ const freePort = () => new Promise<number>((resolve, reject) => {
 ipcMain.handle('debugLaunch', async (_e, cmd: string, args: string[], cwd: string) => {
   debugStop();
   const port = await freePort();
+  // A global rdbg activates its own gems (prism...) before the Gemfile's: use the bundle's when it locks debug.
+  // Without debug in the bundle, `bundle exec rdbg` cannot run, so the global one stays.
+  const lock = await fs.access(path.join(cwd, 'Gemfile')).then(() => fs.readFile(path.join(cwd, 'Gemfile.lock'), 'utf8')).catch(() => '');
+  const [rdbg, ...pre] = /^ {4}debug \(/m.test(lock) ? ['bundle', 'exec', 'rdbg'] : ['rdbg'];
   // -c runs any command (ruby, bundle exec rspec...) with the debugger loaded through RUBYOPT.
-  const proc = shellSpawn('rdbg', ['--open', '--host=127.0.0.1', `--port=${port}`, '-c', '--', cmd, ...args], cwd, syncOutput);
+  const proc = shellSpawn(rdbg, [...pre, '--open', '--host=127.0.0.1', `--port=${port}`, '-c', '--', cmd, ...args], cwd, syncOutput);
   debug = { proc };
   let attached = false;
   const out = (d: Buffer) => {
@@ -483,7 +492,31 @@ app.whenReady().then(async () => {
   }
 });
 
-ipcMain.handle('confirmClose', () => { if (afterClose === 'relaunch') app.relaunch(); allowClose = true; win?.close(); });
+// First existing folder or file named on the command line. Network paths are allowed, like in the Open Folder dialog.
+async function openTarget(argv: string[], cwd: string): Promise<OpenTarget | null> {
+  for (const p of argPaths(argv, !!process.defaultApp, cwd)) {
+    const s = await fs.stat(p).catch(() => null);
+    if (!s?.isDirectory() && !s?.isFile()) continue;
+    // Only the on-disk case (a root typed as "c:\proj" makes Ruby load files twice); mapped drives, subst and links stay as typed.
+    const real = await fs.realpath(p).catch(() => p);
+    return { path: real.toLowerCase() === p.toLowerCase() ? real : p, isFile: s.isFile() };
+  }
+  return null;
+}
+// Until the renderer takes initialPath, a path from another instance replaces the pending one instead of being sent.
+let openReady = false;
+let pendingOpen = openTarget(process.argv, process.cwd());
+ipcMain.handle('initialPath', () => { openReady = true; const p = pendingOpen; pendingOpen = Promise.resolve(null); return p; });
+app.on('second-instance', async (_e, _argv, _cwd, data) => {
+  if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); }
+  const d = data as { argv?: unknown; cwd?: unknown } | null;
+  if (!Array.isArray(d?.argv) || typeof d.cwd !== 'string') return;
+  const t = await openTarget(d.argv.map(String), d.cwd);
+  if (!t) return;
+  if (openReady) send('openPath', t.path, t.isFile); else pendingOpen = Promise.resolve(t);
+});
+
+ipcMain.handle('confirmClose',() => { if (afterClose === 'relaunch') app.relaunch(); allowClose = true; win?.close(); });
 
 app.on('window-all-closed', () => {
   stopLsp();

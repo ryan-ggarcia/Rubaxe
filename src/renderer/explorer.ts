@@ -34,6 +34,14 @@ export function initExplorer(openFolder: () => void) {
   $('#explorer-empty-open').onclick = openFolder;
   const tree = $('#explorer-tree');
   tree.tabIndex = 0;
+  // Click on the empty area clears the selection, so "New file/folder" targets the project root again.
+  tree.onclick = ev => {
+    if ((ev.target as HTMLElement).closest('.tree-row')) return;
+    selected = '';
+    selectedIsDir = false;
+    picked.clear();
+    paintSelection();
+  };
   tree.onkeydown = e => {
     const many = chosen();
     if (!many.length || (e.key !== 'F2' && e.key !== 'Delete')) return;

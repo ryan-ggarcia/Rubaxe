@@ -54,7 +54,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Barra de menus (Arquivo, Editar, Seleção, Exibir, Ir, Executar, Terminal, Ajuda) ligada aos comandos existentes
 - [x] Activity Bar: Explorer, Busca, Controle de Código, Executar e Depurar, Testes, Ruby, Configurações
 - [x] Side Bar redimensionável e recolhível (Ctrl+B ou botão na barra de título)
-- [x] Abas de editor: ativa/inativa, indicador de "não salvo", fechar (Ctrl+W)
+- [x] Abas de editor: ativa/inativa, indicador de "não salvo", fechar (Ctrl+W), arrastar para reordenar; abas com o mesmo nome mostram o menor trecho da pasta que as diferencia (`…\articles`), como no VS Code
 - [x] Panel inferior redimensionável (Ctrl+J abre já com terminal): Problemas, Saída, Console de Depuração, Terminal
 - [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
 - [x] Tema escuro e claro (`workbench.theme`) com destaque vermelho Ruby (#CC342D) e cantos arredondados, também no Monaco, xterm e barra de título
@@ -63,7 +63,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
 
 ### Fase 2 — Arquivos, navegação e busca ★
-- [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo
+- [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo; clique na área vazia limpa a seleção e "Novo arquivo/pasta" volta a criar na raiz
 - [x] Renomear (F2) e mover para a lixeira (Delete) pelo menu de contexto do explorer; abas abertas acompanham
 - [x] Seleção múltipla no explorer (Ctrl/Cmd+clique, Shift+clique, Shift+Ctrl soma o intervalo); excluir vários com uma confirmação e resumo no fim; arrastar e soltar um ou vários itens numa pasta ou na raiz (pede confirmação antes de substituir; recusa pasta dentro dela mesma)
 - [x] Recarregar abas quando o arquivo muda fora do Rubaxe (ao focar a janela); aba com alterações não salvas é mantida e avisada
@@ -189,13 +189,16 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - Inlay hints a partir de assinaturas RBS (tipos de atributo, parâmetro, retorno).
 - Depurador: seguir subprocessos automaticamente.
 - Estilo de código: espaços separados para atribuição/comparação/range e declarações vazias de classe/módulo (o RuboCop não tem cop separado); RuboCop em modo servidor (o Rubaxe só usa o RuboCop via Ruby LSP).
+- Exclusão em OneDrive, pendrive FAT e nas unidades de rede reais (Y:/Z:): adiado a pedido do usuário (27/10/2026). Testado só com `subst`.
 
 ## 7. Próximas funcionalidades (pedidas, ainda não feitas)
-- [ ] **Comando `rubaxe .` no terminal** (como o `code .` do VS Code):
-  - O app aceita pasta ou arquivo na linha de comando: `Rubaxe.exe <pasta>` abre a pasta; `Rubaxe.exe <arquivo>` abre o arquivo.
-  - Instância única: com o Rubaxe já aberto, a mesma janela troca para a pasta nova (perguntando antes se houver aba não salva).
-  - Windows: o instalador (`build/installer.nsh`) cria `rubaxe.cmd` numa pasta própria e a põe no PATH do usuário; o desinstalador remove os dois. Só vale após reinstalar; terminais já abertos precisam ser reabertos.
-  - macOS/Linux: depois, por um comando da paleta ("Instalar comando rubaxe no PATH").
+- [x] **Comando `rubaxe .` no terminal** (como o `code .` do VS Code), conferido no app dev em 27/10/2026:
+  - O app aceita pasta ou arquivo na linha de comando (`src/main/argv.ts`); caminho relativo resolve contra o cwd de quem chamou. Arquivo dentro da pasta aberta só abre a aba; fora dela, abre a pasta-mãe e depois o arquivo. A mesma pasta já aberta (inclusive com outra caixa) não faz nada; caixa errada vira a caixa real do disco (`realpath`), mas unidade mapeada, `subst`, junction e symlink ficam como digitados.
+  - Instância única (`requestSingleInstanceLock`, por userData): com o Rubaxe já aberto, a mesma janela restaura, foca e troca de pasta, perguntando antes se houver aba não salva (Cancelar mantém tudo). Comandos seguidos esperam um ao outro.
+  - Windows: o instalador (`build/installer.nsh`) cria `$INSTDIR\bin\rubaxe.cmd` e põe a pasta no PATH do usuário via PowerShell (sem limite de string do NSIS, mantém REG_EXPAND_SZ, sem duplicar); o desinstalador tira só essa entrada. Scripts de PATH testados contra uma chave de registro de teste (PATH de 11.900 caracteres idêntico na ida e volta).
+  - [ ] Não testado: instalar/desinstalar/atualizar de verdade e abrir um terminal novo com `rubaxe` (precisa de autorização do usuário, mexe no PATH real).
+  - [ ] macOS/Linux: depois, por um comando da paleta ("Instalar comando rubaxe no PATH").
+  - Risco: com o Rubaxe instalado aberto, `npm start` sem `--user-data-dir` entrega o caminho ao app instalado e sai (os dois usam `%APPDATA%\rubaxe`).
 
 ## 8. Testes ainda não executados
 Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app empacotado no Windows 11) até a versão 0.2.2.
@@ -214,32 +217,32 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 **Terminal e teclado**
 - [ ] Perfil WSL com uma distro instalada (deve aparecer e abrir). Sem distro ele fica oculto, e isso foi testado.
 - [ ] Teclado ABNT físico (Ctrl+' para o terminal, Ctrl+Shift+").
-- [ ] Navegação por Tab com teclado real nos botões do cabeçalho do terminal (só a ordem no DOM foi conferida).
+- [x] Navegação por Tab com teclado real nos botões do cabeçalho do terminal: + → perfis → seletor → lixeira → fechar → xterm, com anel de foco; Enter/Espaço acionam (27/10/2026).
 
-**Ruby, RuboCop e Rails**
-- [ ] Formatar ao salvar (Ctrl+S) com RuboCop no bundle do projeto, e com Standard (`rubocop.standard`, `linters: ['standard']` no Ruby LSP).
-- [ ] Opção `rubocop.config` = `projeto` × `Rubaxe` num projeto real.
-- [ ] Rename Rails: recursos com namespace (`admin/posts`), fixtures (`posts(:one)`, `test/fixtures/posts.yml`) e app com testes de controller reais (`bin/rails test`).
-- [ ] Debug de projeto com Gemfile (`bundle exec`) e de testes Rails.
-- [ ] Bundler "Criar Gem…" respondendo os prompts do `bundle gem` pela linha de entrada da Saída.
+**Ruby, RuboCop e Rails** (27/10/2026, app dev + CDP; ver seção 11)
+- [x] Formatar ao salvar (Ctrl+S) com RuboCop no bundle do projeto (respeita o `.rubocop.yml`), e com Standard (diagnósticos "Standard Ruby", aspas trocadas no Ctrl+S).
+- [x] Opção `rubocop.config` = `projeto` × `Rubaxe` num projeto real. Por design: voltar para "projeto" mantém o `inherit_from` já gravado.
+- [x] Rename Rails: fixtures (`test/fixtures/posts.yml` e `posts(:one)`) renomeadas; `bin/rails test` passa depois de ajustar à mão rotas, migração e associações. Recurso com namespace (`admin/posts`) é recusado (ver seção 9).
+- [x] Debug de projeto com Gemfile e de testes Rails: usa `bundle exec rdbg` quando o `Gemfile.lock` tem a gem `debug`; para no breakpoint.
+- [x] Bundler "Criar Gem…" respondendo os prompts do `bundle gem` pela linha de entrada da Saída (sem ANSI cru).
 - [ ] Saída do profiler em tempo real (hoje aparece só no fim, de propósito).
+- [ ] `rails console`: bloqueado nesta máquina (o `gem "fiddle"` não compila: banco do pacman/MSYS2 com assinatura PGP inválida).
 
 **Visual**
-- [ ] Acrílico com a janela sem foco e maximizada.
-- [ ] Contraste medido na tela, após o último ajuste, da pílula da busca (escuro) e dos ícones inativos da activity bar (claro). Hoje só calculado.
-- [ ] Hover e estado ativo do thumb das scrollbars; scrollbars dentro do menu ☰ e de Configurações.
-- [ ] Ícones em 100% de zoom: os selos de controller/helper/model e a gema do `.erb` têm ~7 px.
+- [ ] Acrílico com a janela sem foco e maximizada. Bloqueado: a captura da tela do Windows foi negada pela permissão.
+- [ ] Contraste medido na tela, após o último ajuste, da pílula da busca (escuro) e dos ícones inativos da activity bar (claro). Na página, sem o acrílico real: 11:1 e 7,9:1. Bloqueado pelo mesmo motivo.
+- [x] Hover e estado ativo do thumb das scrollbars (explorer e Configurações, nos dois temas); o menu ☰ ganhou rolagem (era bug: itens de "Exibir" ficavam fora da tela com ~576 px de altura).
+- [x] Ícones em 100% de zoom: selos de controller/helper/model distintos pela cor (a forma não se lê a ~7 px); gema do `.erb` reconhecível.
 - [ ] Barra de seleção do painel direito com um projeto Rails real (após a correção da seleção que sumia).
 
 **Arquivos**
-- [ ] Exclusão em OneDrive, pendrive FAT e nas unidades de rede reais (Y:/Z:). Testado só com `subst`.
 - [ ] Risco conhecido, não testado a fundo: um arquivo maior que a capacidade da Lixeira é apagado de vez pelo Windows sem aviso.
 
 **Markdown**
-- [ ] Link `http(s)` da prévia abrindo o navegador de verdade (testado só até o `window.open`; o `setWindowOpenHandler` do main é o mesmo de antes).
+- [x] Link `http(s)` da prévia abre o navegador padrão de verdade (servidor local recebeu o GET do Chrome; nenhuma janela Electron extra).
 
 **Qualidade**
-- [ ] Rodar o clean room (`tools/cleanroom_check.py`) antes do próximo Release. Última execução com 0 hits: no redesign. Update, ajustes visuais e ícones vieram depois.
+- [x] Clean room (`tools/cleanroom_check.py`) com o RubyMine 2026.2.1 instalado: 2.238 textos e 4.999 classes conferidos, 0 ocorrências, incluindo as mudanças de 27/10/2026. Rodar de novo antes de cada Release.
 
 ## 9. Limites conhecidos (ajustar um dia)
 **Prévia de Markdown**
@@ -248,7 +251,15 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 - [ ] Imagens de um projeto aberto por caminho de rede (`\servidor\pasta`) não aparecem: o main bloqueia todo `file:` UNC para não vazar credencial NTLM. Unidades mapeadas (`Y:`) funcionam.
 - [ ] Vídeo, áudio, SVG inline e imagens `data:` dentro do `.md` não são exibidos (removidos pela sanitização).
 - [ ] Com muitas abas abertas, o botão de prévia (fixo à direita da barra de abas) cobre o fim da última aba. Não se reproduziu com 19 abas em 23/10/2026: com a barra rolada até o fim, o botão (1080–1102 px) fica depois da última aba (1078 px). Fica aberto até ser conferido com outros tamanhos de janela e nomes de aba.
-- [ ] No tema claro, as checkboxes de tarefa usam o visual padrão do Chromium (apagadas).
+- [ ] No tema claro, as checkboxes de tarefa usam o visual padrão do Chromium (apagadas): medido 1,5:1 (marcada) e 1,4:1 (desmarcada).
+
+**Rails, testes e depurador**
+- [ ] Rename Rails de recurso com namespace (`admin/posts`) é recusado com uma mensagem, sem alterar arquivos: o rename perdia o `Admin::` e deixava `@admin_post`/`admin_posts_path` para trás.
+- [ ] Rename Rails não troca a chave `post: one` em outras fixtures, `fixtures :posts`, nem `belongs_to :post`/`has_many` de outros models, e a lista "Revise manualmente" não os cita. Ela também lista falsos positivos como `create_user_posts.rb`.
+- [ ] Helper do Minitest (`src/ruby/rubaxe_minitest.rb`) validado com Minitest 6 e com o Minitest do Rails 8.1; Minitest 5.x não foi validado (instalação inconsistente nesta máquina).
+- [ ] Linux/macOS: o profiler ainda faz `require 'stackprof'` antes do Bundler; um Gemfile com outra versão de stackprof volta a dar "already activated".
+- [ ] Caixa errada dentro de unidade mapeada ou `subst` (`Q:\APP`) não é corrigida pelo `rubaxe <caminho>`.
+- [ ] O terminal continua no cwd da pasta anterior depois de trocar de pasta.
 
 ## 10. Validação parcial: Git estilo VS Code, toasts e seleção múltipla (23/10/2026, interrompida)
 Rodada E2E encerrada a pedido do usuário antes do fim. App com `--user-data-dir` isolado; o `settings.json` real ficou intacto (mesmo SHA256 antes e depois). typecheck ok, 59/59 testes, build ok.
@@ -311,3 +322,14 @@ Integridade antes de começar: os 67 arquivos versionados não modificados batem
 - Os 5 testes `inspect:` com 0xC000012F e o Ruby LSP morrendo vieram do Ruby corrompido antes da reinstalação das 18:40 (arquivos `.rb` com bytes nulos e trechos de outros arquivos; `cgi/escape.rb` dava SyntaxError). Depois da reinstalação: 0 arquivos corrompidos e 5/5 `inspect:`.
 - A mesma corrupção estava em 290 arquivos de `node_modules` (`@electron/get/dist/types.js` impedia o download do Electron) e em `tools/cleanroom_check.py`, que tinha registros do diário USN do NTFS. O `git status` não acusou porque tamanho e data batiam. O script foi restaurado do git; o `npm ci` limpo zerou os arquivos corrompidos, e o próprio npm acusou um tarball corrompido no cache. O Windows registra desligamentos inesperados quase todo dia (evento 6008), o que combina com escrita sem flush.
 - Sem `user.name`/`user.email` globais no git, o commit falha com "unable to auto-detect email address". No teste foi configurado só no repositório.
+
+## 11. Validação: abas, explorer, `rubaxe .` e seção 8 (27/10/2026)
+App de desenvolvimento com `--user-data-dir` isolado (conferido pelo main), em três rodadas. Diálogos nativos, `trashItem` e `openExternal` respondidos por patch/CDP; nada foi para a Lixeira. `settings.json` real com o mesmo SHA256 antes e depois. Nenhuma gem global nem Ruby instalado (bundles só em `vendor/bundle` de projetos temporários). typecheck ok, 67/67 testes, build ok, clean room 0 ocorrências.
+- [x] Abas: arrastar reordena (antes/depois pela metade), a ativa não muda; abas e explorer recusam o arrasto um do outro; o botão de prévia não arrasta.
+- [x] Abas com o mesmo nome: `…\articles`, `…\comments`, `…\users` visíveis por inteiro; nome longo encolhe a descrição primeiro (só o tooltip diferencia quando ela some); fechando as outras, a descrição some; contraste 6,1–7,6:1.
+- [x] Explorer: clique na área vazia (inclusive com a árvore longa rolada) limpa a seleção e "Nova pasta" cria na raiz; Ctrl/Shift+clique, F2, Delete e soltar na área vazia continuam funcionando.
+- [x] `rubaxe <caminho>` em todos os casos da seção 7 (boot com e sem argv, `.`/relativo/`..`, minimizado, arquivo dentro e fora, mesma pasta com outra caixa, inexistente, espaço e `\` final, aba suja com Cancelar/OK, dois comandos seguidos, caixa errada, `subst`).
+- [x] Bugs achados e corrigidos na rodada: ANSI cru na Saída e no Console de Depuração; helpers de teste/cobertura/profiler ativando `json`/`minitest` antes do Bundler ("already activated"); debug com Gemfile usando o `rdbg` global; rename Rails perdendo o namespace (agora recusa) e ignorando fixtures; menu ☰ sem rolagem; contraste da descrição das abas; descrição das abas cortada; view Testes mantendo resultados e cobertura do projeto anterior.
+- [x] Teste por linha (▶ na margem) roda 1 teste; o "Running 3 tests" do Rails é a contagem dos carregados. No Windows o Rails quebra com caminho absoluto + linha (divide no `:`); o Rubaxe passa caminho relativo e não é afetado.
+- [x] Regressão: Ctrl+J, auto save, Git no painel direito, F9+F5, prévia de Markdown.
+- Observado, cosmético: na Saída, cada prompt respondido do `bundle gem` aparece duas vezes (o Thor reescreve a linha com `\r`).

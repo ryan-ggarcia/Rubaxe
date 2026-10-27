@@ -1,10 +1,10 @@
 // Editor group: tabs, Monaco models, open/save/close.
 import type * as M from 'monaco-editor';
-import { $, api, basename, h, notify } from './dom.ts';
+import { $, api, basename, h, notify, ws } from './dom.ts';
 import { fileSvg } from './file-icons.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
-import { ipcMessage, languageFor } from './paths.ts';
+import { ipcMessage, languageFor, tabDescriptions } from './paths.ts';
 
 export interface Tab {
   conflict?: string; // disk text that differs from this dirty tab (outside edit not yet decided on)
@@ -23,6 +23,7 @@ export interface Tab {
 
 export const tabs: Tab[] = [];
 export let active: Tab | undefined;
+let draggedTab: Tab | undefined;
 export let editor: M.editor.IStandaloneCodeEditor;
 let diffEditor: M.editor.IStandaloneDiffEditor;
 const loadedVersion = new WeakMap<M.editor.ITextModel, number>();
@@ -292,13 +293,37 @@ function renderTabs() {
   $('#tabs').hidden = !tabs.length;
   const preview = h('button', { className: 'tab-action codicon codicon-open-preview', title: 'Abrir prévia (Ctrl+Shift+V)', ariaLabel: 'Abrir prévia' });
   preview.onclick = () => openPreview();
-  $('#tabs').replaceChildren(...tabs.map(t => {
+  const descs = tabDescriptions(tabs.map(t => t.kind === 'file' ? t.path : undefined), ws.root, ws.sep);
+  $('#tabs').replaceChildren(...tabs.map((t, i) => {
     const close = h('span', { className: 'codicon close codicon-close', title: 'Fechar (Ctrl+W)' });
     close.onclick = e => { e.stopPropagation(); closeTab(t); };
-    const el = h('div', { className: 'tab' + (t === active ? ' active' : '') + (t.dirty ? ' dirty' : ''), title: t.path ?? t.title },
-      (t.kind === 'file' ? fileSvg(t.path ?? t.title) : h('span', { className: `codicon codicon-${{ settings: 'settings-gear', diff: 'diff', preview: 'open-preview' }[t.kind]}` })), h('span', { className: 'tab-label' }, t.title), close);
+    const el = h('div', { className: 'tab' + (t === active ? ' active' : '') + (t.dirty ? ' dirty' : ''), title: t.path ?? t.title, draggable: true },
+      (t.kind === 'file' ? fileSvg(t.path ?? t.title) : h('span', { className: `codicon codicon-${{ settings: 'settings-gear', diff: 'diff', preview: 'open-preview' }[t.kind]}` })),
+      h('span', { className: 'tab-label' }, t.title), ...(descs[i] ? [h('span', { className: 'tab-desc' }, descs[i])] : []), close);
     el.onclick = () => activate(t);
     el.onauxclick = e => { if (e.button === 1) closeTab(t); };
+    // Drag to reorder; only a tab drag is accepted here, so explorer rows and outside files are refused.
+    const after = (e: DragEvent) => { const r = el.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+    const unmark = () => el.classList.remove('drop-before', 'drop-after');
+    el.ondragstart = e => { draggedTab = t; e.dataTransfer!.effectAllowed = 'move'; };
+    el.ondragend = () => { draggedTab = undefined; };
+    el.ondragover = e => {
+      if (!draggedTab || draggedTab === t) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'move';
+      el.classList.toggle('drop-after', after(e));
+      el.classList.toggle('drop-before', !after(e));
+    };
+    el.ondragleave = unmark;
+    el.ondrop = e => {
+      e.preventDefault();
+      unmark();
+      if (!draggedTab || draggedTab === t) return;
+      tabs.splice(tabs.indexOf(draggedTab), 1);
+      tabs.splice(tabs.indexOf(t) + (after(e) ? 1 : 0), 0, draggedTab);
+      draggedTab = undefined;
+      renderTabs();
+    };
     return el;
   }), ...(isMarkdown() && Features.on('markdownPreview') ? [preview] : []));
   $('#tabs').querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });

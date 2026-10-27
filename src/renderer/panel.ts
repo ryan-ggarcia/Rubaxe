@@ -1,6 +1,7 @@
 // Bottom panel: Problems (Monaco markers) and Output (process output).
 import { $, api, basename, h } from './dom.ts';
 import * as Editor from './editor.ts';
+import { ANSI } from './paths.ts';
 
 const MAX_OUTPUT = 200_000; // long-running servers would otherwise grow the DOM forever
 let output = '';
@@ -43,7 +44,7 @@ export function show(which: Which) {
 }
 
 export function append(text: string) {
-  output = (output + text.replace(/\x1b\[[0-9;]*m/g, '')).slice(-MAX_OUTPUT);
+  output = (output + text.replace(ANSI, '')).slice(-MAX_OUTPUT);
   const pre = $('#panel-output');
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
   pre.textContent = output;
