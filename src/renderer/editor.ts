@@ -65,7 +65,46 @@ export function createEditor(settingsRenderer: (container: HTMLElement) => void,
   monaco.editor.registerEditorOpener({ openCodeEditor: (_source, resource, selection) => { void openUri(resource, selection); return true; } });
   // Rename and quick-fixes can edit files without a tab: give them one so the change can be seen and saved.
   editor.onDidBlurEditorText(() => autoSave(active));
+  formatOnIdle();
   monaco.editor.onDidCreateModel(model => model.onDidChangeContent(() => { if (model.uri.scheme === 'file' && !tabFor(model)) adopt(model); }));
+}
+
+// Formats a Ruby file 2 s after the last edit. The format's own edit schedules one more check, which finds the text already
+// formatted and stops; a failed attempt is not retried until the text changes.
+const formatted = new WeakMap<M.editor.ITextModel, string>(); // text already formatted (or tried): no automatic format for it
+function formatOnIdle() {
+  let timer: ReturnType<typeof setTimeout> | undefined, running = false, composing = false, touched = false;
+  editor.onDidCompositionStart(() => composing = true);
+  editor.onDidCompositionEnd(() => composing = false);
+  // Monaco drops the format if the user moves the cursor or types meanwhile; the format's own edit moves it as 'modelChange'.
+  editor.onDidChangeCursorSelection(e => { if (running && e.source !== 'modelChange') touched = true; });
+  editor.onDidChangeModelContent(e => {
+    clearTimeout(timer);
+    const model = editor.getModel();
+    if (!model || model.getLanguageId() !== 'ruby' || !Features.get<boolean>('editor.formatOnIdle')) return;
+    if (e.isUndoing || e.isRedoing) return void formatted.set(model, model.getValue()); // an undone format stays undone
+    timer = setTimeout(async () => {
+      const ctx = (editor as unknown as { _contextKeyService?: { getContextKeyValue(k: string): unknown } })._contextKeyService;
+      const before = model.getValue();
+      if (running || composing || model.isDisposed() || editor.getModel() !== model || active?.model !== model || !editor.hasTextFocus()
+        || !Features.on('formatting') || formatted.get(model) === before || ['suggestWidgetVisible', 'parameterHintsVisible'].some(k => ctx?.getContextKeyValue(k))) return;
+      running = true;
+      touched = false;
+      const atEnd = editor.getPosition()?.equals(model.getFullModelRange().getEndPosition());
+      try {
+        await Lsp.formatQuietly(() => editor.getAction('editor.action.formatDocument')!.run());
+      } finally {
+        running = false;
+        // Monaco dropped the result: keep the text the user has now eligible for the next round.
+        if (!model.isDisposed()) {
+          formatted.set(model, touched ? before : model.getValue());
+          // The final newline the formatter adds lands at the cursor when it sits at the end: keep it on the line being typed.
+          const n = model.getLineCount();
+          if (!touched && atEnd && !before.endsWith('\n') && model.getLineContent(n) === '' && editor.getModel() === model) editor.setPosition({ lineNumber: n - 1, column: model.getLineMaxColumn(n - 1) });
+        }
+      }
+    }, 2000);
+  });
 }
 
 export function applyOptions() {
@@ -209,8 +248,10 @@ function disposeOrphans() {
   for (const m of monaco.editor.getModels()) if (m.uri.scheme === 'file' && !tabFor(m) && m !== editor.getModel()) m.dispose();
 }
 
+const keep = (tab: Tab) => tab.dirty && !confirm(`"${tab.title}" tem alterações não salvas. Fechar e descartar as alterações?`);
+
 export function closeTab(tab: Tab, discard = false): boolean {
-  if (tab.dirty && !discard && !confirm(`"${tab.title}" tem alterações não salvas. Fechar e descartar as alterações?`)) return false;
+  if (!discard && keep(tab)) return false;
   const i = tabs.indexOf(tab);
   tabs.splice(i, 1);
   if (active === tab) {
@@ -234,7 +275,8 @@ export function closeTab(tab: Tab, discard = false): boolean {
 }
 
 export function closeAll(): boolean {
-  for (const t of [...tabs]) if (!closeTab(t)) return false;
+  if (tabs.some(keep)) return false; // ask for every dirty tab before closing any
+  for (const t of [...tabs]) closeTab(t, true);
   return true;
 }
 
@@ -245,6 +287,7 @@ export async function save(tab = active, auto = false): Promise<boolean> {
   if (auto && await api.readFile(tab.path).then(t => t !== tab.disk, () => false)) return false;
   if (!auto && Features.get<boolean>('editor.formatOnSave') && Features.on('formatting') && model.getLanguageId() === 'ruby' && editor.getModel() === model) {
     await editor.getAction('editor.action.formatDocument')?.run();
+    formatted.set(model, model.getValue());
   }
   const text = model.getValue();
   try {

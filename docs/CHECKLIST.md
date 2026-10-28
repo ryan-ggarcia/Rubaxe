@@ -58,9 +58,11 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Panel inferior redimensionável (Ctrl+J abre já com terminal): Problemas, Saída, Console de Depuração, Terminal
 - [x] Status Bar: versão do Ruby, status do Ruby LSP, erros/avisos, Ln/Col, indentação, fim de linha (LF/CRLF), linguagem
 - [x] Tema escuro e claro (`workbench.theme`) com destaque vermelho Ruby (#CC342D) e cantos arredondados, também no Monaco, xterm e barra de título
+- [x] Fundo em gradiente (`workbench.background`, padrão `gradiente`; `liso` = visual anterior): vermelho Ruby e preto (claro: vermelho e branco) atrás dos painéis a 75%, menus/paleta/notificações com desfoque de 40 px; com acrílico o gradiente fica a 60%; `prefers-reduced-transparency` deixa os painéis como no liso; troca na hora (não conferido no app)
 - [x] Auto save: 1 s após a última edição e ao trocar de aba/perder o foco; não formata (só Ctrl+S) e não sobrescreve edição externa (com aba suja + edição externa o auto save fica suspenso; Ctrl+S grava)
 - [x] Zoom da janela como no VS Code (`window.zoomLevel`, fator 1,2^nível, mínimo 80% (≈ -1,22) até 8): Ctrl+= / Ctrl++ / Ctrl+-, Ctrl+0 redefine; item na Status Bar com −/+/Redefinir enquanto ≠ 100%
 - [x] Tela de boas-vindas: "Abrir pasta" + atalhos; reabrir última pasta
+- [x] Abrir Pasta.../Abrir Arquivo... com projeto aberto pergunta "Nesta janela" ou "Nova janela" (Esc cancela); explorer, Ctrl+P, links, clone e `rubaxe <caminho>` não perguntam (não conferido no app)
 
 ### Fase 2 — Arquivos, navegação e busca ★
 - [x] Explorer em árvore (carregamento sob demanda), novo arquivo/pasta, atualizar, recolher tudo; clique na área vazia limpa a seleção e "Novo arquivo/pasta" volta a criar na raiz
@@ -89,7 +91,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Símbolos do documento e do workspace
 - [x] Diagnósticos (sintaxe + RuboCop) no editor e no painel Problemas
 - [x] Quick-fixes e refatorações (extrair variável/método) — Ctrl+.
-- [x] Formatar documento e "formatar ao salvar"
+- [x] Formatar documento e "formatar ao salvar" — Shift+Alt+F, também em Editar e na paleta; sem formatador no Gemfile (o Ruby LSP só usa RuboCop/Syntax Tree do projeto) ou com o LSP fora do ar, usa o RuboCop do PATH (uma edição desfazível; descartada se o texto mudar no meio; erro vira aviso e não impede o salvamento)
+- [x] Formatar ao parar de digitar (`editor.formatOnIdle`, ligado por padrão; 28/10/2026): arquivo Ruby, 2 s sem edição, editor com foco, sem sugestão/parameter hints/IME abertos, só se o texto mudou desde a última formatação; erros silenciosos (RuboCop ausente avisa uma vez por sessão). Conferido no app: ~65 s de digitação real sem cursor pulando nem texto perdido, digitar durante o format não perde nada, Ctrl+Z fica valendo, Ruby LSP no projeto com rubocop no Gemfile, auto save sem loop. Na prática formata 3,5–4 s depois da última tecla (2 s + RuboCop); digitar, mover o cursor ou Delete nesse meio-tempo descarta o resultado. Não verificado: IME. A auto-indentação por digitação (estilo VS Code: `else`/`end` recuando na hora) ficou para depois, a pedido do usuário; o Monaco 0.57 já tem regras de Ruby, desligadas com `autoIndent: 'advanced'`.
+- [x] `end` automático só quando o bloco ainda não está fechado (o Ruby LSP insere sempre que o arquivo tem qualquer erro de sintaxe)
 - [x] Renomear símbolo
 - [x] Mensagem clara quando o Ruby LSP não está instalado
 
@@ -119,7 +123,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 
 - [x] Cliente DAP + `rdbg` (`rdbg --open -c -- <comando>`; F5 depura o arquivo atual)
 - [x] Breakpoints (linha, condicional), step over/into/out, continuar — clique na margem ou F9; Shift+clique ou paleta para condição
+- [x] Barra flutuante de depuração sobre o editor durante a sessão (continuar, passar por cima, entrar, sair, parar; habilitados só quando parado, exceto parar)
 - [x] Variáveis, watches, pilha de chamadas, console de avaliação (painel "Console de Depuração")
+- [x] Entrada do programa durante a depuração lançada (linha "Entrada do programa" no Console de Depuração, acima da de avaliação; some no attach) (não conferido no app)
 - [x] Depurar testes; attach a processo; debug remoto — `host:porta [pasta no servidor]`; o Rubaxe traduz os caminhos servidor ↔ workspace (testado com o processo rodando em outra pasta)
 
 ### Fase 8 — Testes avançados
@@ -158,7 +164,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ### Fase 11 — Ferramentas
 > **Testado no app real** (13 checagens): PowerShell no terminal, IRB, Git completo num repositório de teste.
 
-- [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão)
+- [x] Terminal integrado (xterm.js + node-pty com binário pré-compilado; vários terminais; perfis PowerShell/PowerShell 7/Prompt de Comando/Git Bash/WSL e perfil padrão); depois de trocar de pasta, abrir o terminal mostra um iniciado na pasta atual (ou cria um), sem fechar os antigos
 - [x] Git: status, diff (aba lado a lado), stage/unstage, commit, blame da linha, branches (trocar/criar pela barra de status), push/pull/fetch
 - [x] Aba Git numa pasta sem repositório (como no VS Code): Inicializar, Clonar (link validado, pasta de destino, abrir a pasta clonada) e Conectar a um remoto (init + origin); Push/Sincronizar sem remote pede o link e faz push -u
 - [x] Prévia de Markdown (`Ctrl+Shift+V`, botão na aba do `.md`, menu Exibir): aba própria ao lado do arquivo (o editor não divide a tela), atualiza ao vivo; GFM (tabelas, tarefas, tachado, autolinks), código colorido pelo Monaco, links relativos abrem no Rubaxe, `#âncora` rola, `http(s)` vai para o navegador; HTML passa pelo DOMPurify e nada carrega sozinho (imagens só locais, resolvidas a partir da pasta do `.md`; da web viram um marcador)
@@ -194,7 +200,7 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 ## 7. Próximas funcionalidades (pedidas, ainda não feitas)
 - [x] **Comando `rubaxe .` no terminal** (como o `code .` do VS Code), conferido no app dev em 27/10/2026:
   - O app aceita pasta ou arquivo na linha de comando (`src/main/argv.ts`); caminho relativo resolve contra o cwd de quem chamou. Arquivo dentro da pasta aberta só abre a aba; fora dela, abre a pasta-mãe e depois o arquivo. A mesma pasta já aberta (inclusive com outra caixa) não faz nada; caixa errada vira a caixa real do disco (`realpath`), mas unidade mapeada, `subst`, junction e symlink ficam como digitados.
-  - Instância única (`requestSingleInstanceLock`, por userData): com o Rubaxe já aberto, a mesma janela restaura, foca e troca de pasta, perguntando antes se houver aba não salva (Cancelar mantém tudo). Comandos seguidos esperam um ao outro.
+  - Uma janela por processo (28/10/2026, a pedido do usuário; substitui a instância única de 27/10): cada `rubaxe <caminho>` abre uma janela nova. Abrir Arquivo…/Abrir Pasta… com um projeto aberto pergunta "Nesta janela" / "Nova janela" (`openInNewWindow`, repassa `--user-data-dir`). `settings.json` gravado de forma atômica (temporário + rename, com nova tentativa em EPERM/EBUSY); entre janelas, a última que salvar vence.
   - Windows: o instalador (`build/installer.nsh`) cria `$INSTDIR\bin\rubaxe.cmd` e põe a pasta no PATH do usuário via PowerShell (sem limite de string do NSIS, mantém REG_EXPAND_SZ, sem duplicar); o desinstalador tira só essa entrada. Scripts de PATH testados contra uma chave de registro de teste (PATH de 11.900 caracteres idêntico na ida e volta).
   - [ ] Não testado: instalar/desinstalar/atualizar de verdade e abrir um terminal novo com `rubaxe` (precisa de autorização do usuário, mexe no PATH real).
   - [ ] macOS/Linux: depois, por um comando da paleta ("Instalar comando rubaxe no PATH").
@@ -259,7 +265,17 @@ Tudo abaixo ficou de fora dos testes de ponta a ponta (CDP, teclas reais e app e
 - [ ] Helper do Minitest (`src/ruby/rubaxe_minitest.rb`) validado com Minitest 6 e com o Minitest do Rails 8.1; Minitest 5.x não foi validado (instalação inconsistente nesta máquina).
 - [ ] Linux/macOS: o profiler ainda faz `require 'stackprof'` antes do Bundler; um Gemfile com outra versão de stackprof volta a dar "already activated".
 - [ ] Caixa errada dentro de unidade mapeada ou `subst` (`Q:\APP`) não é corrigida pelo `rubaxe <caminho>`.
-- [ ] O terminal continua no cwd da pasta anterior depois de trocar de pasta.
+- [x] O terminal continuava no cwd da pasta anterior depois de trocar de pasta. Corrigido em 28/10/2026: abrir o terminal cria um na pasta atual; os antigos ficam no seletor.
+- [ ] `end` automático: em código sem indentação dentro de um método (`def a` / `if x` / `end` tudo na coluna 0), o `end` do `def` é tomado como o do `if` novo e o `end` não é inserido. Heredocs, %-literais e `x = if y` não são reconhecidos (o `end` é inserido como antes).
+- [ ] `else`, `when` e `end` digitados à mão não recuam sozinhos (o VS Code recua).
+- [ ] Formatação pelo RuboCop (projeto sem rubocop no Gemfile): leva ~2 s; mover o cursor ou digitar nesse meio-tempo descarta o resultado sem aviso (comportamento do Monaco). Usa `RUBOCOP_TARGET_RUBY_VERSION=3.4`, que passa por cima do `TargetRubyVersion` do projeto (indiferente para layout).
+- [ ] Entrada do programa no debug é um pipe, não um TTY: `gets` funciona, `io/console` (`noecho`, `getch`) não.
+- [ ] Caminho com `%NOME%` (ex.: pasta `pct%PATH%dir`) é expandido pelo cmd.exe em todo comando que passa por `shellSpawn`/`quote()`.
+
+**Visual e janelas**
+- [ ] Modo liso: o botão ativo da barra de título (`.tb-btn.active`) fica entre 3,95 e 4,40:1 (abaixo de 4,5). Com gradiente: 4,6–5,6.
+- [ ] Editor e terminal continuam opacos sobre o gradiente; o terminal destoa um pouco do cabeçalho translúcido do painel.
+- [ ] Várias janelas são processos separados com o mesmo perfil: a última janela que salvar as configurações vence; o Chromium avisa no console que não conseguiu mover o cache (inofensivo).
 
 ## 10. Validação parcial: Git estilo VS Code, toasts e seleção múltipla (23/10/2026, interrompida)
 Rodada E2E encerrada a pedido do usuário antes do fim. App com `--user-data-dir` isolado; o `settings.json` real ficou intacto (mesmo SHA256 antes e depois). typecheck ok, 59/59 testes, build ok.
@@ -333,3 +349,14 @@ App de desenvolvimento com `--user-data-dir` isolado (conferido pelo main), em t
 - [x] Teste por linha (▶ na margem) roda 1 teste; o "Running 3 tests" do Rails é a contagem dos carregados. No Windows o Rails quebra com caminho absoluto + linha (divide no `:`); o Rubaxe passa caminho relativo e não é afetado.
 - [x] Regressão: Ctrl+J, auto save, Git no painel direito, F9+F5, prévia de Markdown.
 - Observado, cosmético: na Saída, cada prompt respondido do `bundle gem` aparece duas vezes (o Thor reescreve a linha com `\r`).
+
+## 12. Validação: correções relatadas pelo usuário (28/10/2026)
+App de desenvolvimento com `--user-data-dir` isolado (conferido pelo main e na linha de comando das janelas novas), diálogos/`confirm`/`trashItem`/`openExternal` por patch, `settings.json` real com o mesmo SHA256 antes e depois, nada instalado globalmente. typecheck ok, 71/71 testes, build ok, clean room 0 ocorrências (escopo `plugins/ruby/lib`, cópia sem `node_modules`).
+- [x] `end` duplicado: a causa é o Ruby LSP (com qualquer erro de sintaxe no arquivo ele insere `end` sem ver se o bloco já fecha); o Rubaxe descarta o `end` quando o bloco já está fechado (`blockClosed`), inclusive com o corpo na coluna 0. `if`, `def`, `do |x|`, `while`, `case` e comentários conferidos.
+- [x] Formatação: Shift+Alt+F (atalho, menu Editar, paleta, foco fora do editor) e formatar ao salvar. Sem rubocop no Gemfile, formata pelo RuboCop do Ruby escolhido (`formatRuby`); com ele, pelo Ruby LSP. Ctrl+Z desfaz em um passo; sintaxe inválida avisa com linha/coluna e salva mesmo assim; `.rubocop.yml` respeitado nos dois caminhos. ~50 s de digitação sem mexida indevida.
+- [x] Debug: barra flutuante no topo do editor ao parar (com a lateral em qualquer view ou fechada); F5/F10/F11/Shift+F11/Shift+F5 inclusive com foco no terminal. "Entrada do programa" no Console de Depuração: `gets.chomp` recebe o texto, com e sem `bundle exec rdbg`.
+- [x] Fundo em gradiente (padrão) vermelho/preto no escuro e branco/vermelho no claro, `workbench.background` = gradiente/liso aplicando na hora; painéis a 75% e desfoque de 40 px. Contraste medido na tela: `--fg` 7,9–11, `--muted` 5,85–7, texto vermelho 5–7,7.
+- [x] Várias janelas: um processo por janela; `rubaxe <caminho>` sempre abre uma nova; Abrir Arquivo…/Abrir Pasta… com projeto aberto perguntam "Nesta janela"/"Nova janela". 80 gravações simultâneas de duas janelas deixaram o `settings.json` válido.
+- [x] Terminal novo segue a pasta aberta.
+- [x] Achados e corrigidos na rodada: desfoque de 40 px vencido pela regra do acrílico; `end` com corpo na coluna 0; cancelar "descartar alterações" ao abrir pasta fechava as abas limpas (agora pergunta antes de fechar qualquer uma); "Model is disposed!" nas intentions ao fechar abas.
+- [ ] Não testado: instalador real (`rubaxe.cmd` no PATH), material `none` real (foi simulado), Linux/macOS.

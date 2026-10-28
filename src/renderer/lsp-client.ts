@@ -1,7 +1,8 @@
 // Minimal LSP client: Ruby LSP (stdio, via main process) <-> Monaco providers.
 import type * as M from 'monaco-editor';
-import { api } from './dom.ts';
+import { api, notify as toast } from './dom.ts';
 import * as Features from './features.ts';
+import { blockClosed, ipcMessage } from './paths.ts';
 
 type Pos = { line: number; character: number };
 type LRange = { start: Pos; end: Pos };
@@ -22,6 +23,14 @@ let nextId = 1, ready = false, generation = 0;
 let hooks: Hooks | undefined;
 let semanticRegistered = false;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
+let noFormatter = false; // server found no formatter: format with RuboCop from PATH instead
+let quiet = false, warnedMissing = false; // idle format: no toast per failed attempt (mid-typing code is often invalid)
+
+// Runs a format without error toasts, except a one-time "RuboCop não encontrado".
+export async function formatQuietly(run: () => Promise<unknown>) {
+  quiet = true;
+  try { await run(); } finally { quiet = false; }
+}
 const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
 const opened = new Map<string, M.editor.ITextModel>();
 const listeners = new Map<string, { dispose(): void }>();
@@ -206,6 +215,20 @@ export function registerProviders() {
   });
   L.registerDocumentFormattingEditProvider(id, {
     async provideDocumentFormattingEdits(model, options) {
+      // ruby-lsp only formats with a formatter gem in the Gemfile: otherwise (or with the LSP off) run RuboCop from PATH.
+      // Monaco drops the edit if the text or cursor changed meanwhile, and diffs it into minimal edits (one undo step).
+      if ((!ready || noFormatter) && Features.on('formatting') && model.uri.scheme === 'file') {
+        const text = model.getValue(), silent = quiet;
+        try {
+          const out = await api.formatRuby(model.uri.fsPath, text);
+          return out === text ? [] : [{ range: model.getFullModelRange(), text: out }];
+        } catch (e) {
+          const msg = ipcMessage(e), missing = msg.startsWith('RuboCop não encontrado');
+          if (!silent || (missing && !warnedMissing)) toast(msg, 'error');
+          warnedMissing ||= missing;
+          return [];
+        }
+      }
       const r = await ask<LEdit[]>('formatting', 'textDocument/formatting', { textDocument: doc(model), options: { tabSize: options.tabSize, insertSpaces: options.insertSpaces } });
       return (r ?? []).map(e => ({ range: range(e.range), text: e.newText }));
     },
@@ -283,12 +306,14 @@ export async function start(root: string, command: string, h: Hooks) {
     return;
   }
   if (mine !== generation) return;
+  noFormatter = init?.formatter === 'none';
   registerSemanticTokens(init?.capabilities?.semanticTokensProvider?.legend);
   onType?.dispose();
   const trig = init?.capabilities?.documentOnTypeFormattingProvider;
   onType = trig && monaco.languages.registerOnTypeFormattingEditProvider('ruby', {
     autoFormatTriggerCharacters: [trig.firstTriggerCharacter, ...(trig.moreTriggerCharacter ?? [])].filter(c => c !== '|'),
     async provideOnTypeFormattingEdits(model, position, ch, options) {
+      if (ch === '\n' && blockClosed(model.getLinesContent(), position.lineNumber - 2)) return [];
       const r = await ask<LEdit[]>('autoEnd', 'textDocument/onTypeFormatting', { textDocument: doc(model), position: pos(position), ch, options: { tabSize: options.tabSize, insertSpaces: options.insertSpaces } });
       // The server only places the cursor ($0) for known clients: indent the empty middle line ourselves once Monaco applied the edits.
       if (ch === '\n' && r?.length) {

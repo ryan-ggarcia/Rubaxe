@@ -9,15 +9,12 @@ import { fileURLToPath } from 'node:url';
 import type { IPty } from 'node-pty';
 import { createParser, frame } from './lsp.ts';
 import { quote } from './shell.ts';
+import { rubocopArgs, rubocopOutput } from './rubocop.ts';
 import { watchIgnored } from './watch.ts';
 import type { AppUpdater } from 'electron-updater';
 import { isNewer } from './version.ts';
 import { argPaths } from './argv.ts';
 import type { OpenTarget, SearchHit, UpdateStatus } from './preload.ts';
-
-// `rubaxe .` with Rubaxe already open: this second process quits and the first gets its argv/cwd (additionalData, since
-// Electron may reorder or append to the argv it hands over). The lock is per userData: --user-data-dir instances stay apart.
-if (!app.requestSingleInstanceLock({ argv: process.argv, cwd: process.cwd() })) app.exit();
 
 const IGNORED = new Set(['.git', 'node_modules', 'tmp', 'log', '.bundle', 'coverage', '.ruby-lsp', 'vendor']);
 const MAX_FILES = 20000;
@@ -259,12 +256,15 @@ ipcMain.handle('debugLaunch', async (_e, cmd: string, args: string[], cwd: strin
   };
   proc.stdout!.on('data', out);
   proc.stderr!.on('data', out);
+  proc.stdin!.on('error', e => send('debugOutput', e.message + '\n')); // EPIPE when writing after the program ended
   proc.on('error', e => send('debugOutput', e.message + '\n'));
   proc.on('close', code => { if (debug.proc === proc) { debug.sock?.destroy(); debug = {}; send('debugOutput', `\n[encerrado com código ${code}]\n`); send('debugEnd'); } });
 });
 ipcMain.handle('debugAttach', (_e, host: string, port: number) => { debugStop(); dapConnect(port, host); });
 ipcMain.handle('debugStop', () => debugStop());
 ipcMain.on('dapSend', (_e, msg: unknown) => { debug.sock?.write(frame(msg)); });
+// The debuggee's own stdin (gets): rdbg --open talks DAP over the socket and leaves the pipe to the program.
+ipcMain.on('debugWrite', (_e, data: string) => debug.proc?.stdin?.write(data));
 
 // Terminal: real pseudo-terminals (ConPTY on Windows) so shells, irb and rails console behave interactively.
 ipcMain.handle('ptySpawn', async (_e, id: string, cwd: string, cols: number, rows: number, shellPath: string, args?: string[]) => {
@@ -340,6 +340,25 @@ ipcMain.handle('exec', async (_e, cmd: string, args: string[], cwd: string) => {
     c.on('close', code => resolve({ code, out }));
   });
 });
+// Format with the RuboCop on PATH (rubyBin first) when the Ruby LSP will not (no Gemfile, or no rubocop in it).
+// cwd = the file's folder: RuboCop looks for .rubocop.yml from there upward.
+ipcMain.handle('formatRuby', async (_e, file: string, text: string) => {
+  const dir = path.dirname(file);
+  const cwd = await fs.stat(dir).then(s => s.isDirectory(), () => false) ? dir : os.homedir();
+  // Without .ruby-version/Gemfile.lock RuboCop parses as Ruby 2.7 and calls `def f = 1` or `{x:}` a syntax error.
+  // shortcut: this env var outranks the project's TargetRubyVersion too; harmless for layout, revisit if a project needs <3.4 parsing.
+  const c = shellSpawn('rubocop', rubocopArgs(file), cwd, { RUBOCOP_TARGET_RUBY_VERSION: '3.4' });
+  let out = '', err = '';
+  c.stdout!.setEncoding('utf8').on('data', d => out += d);
+  c.stderr!.setEncoding('utf8').on('data', d => err += d);
+  c.stdin!.on('error', () => {}); // EPIPE if rubocop dies before reading; the exit code tells why
+  c.stdin!.end(text, 'utf8');
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; kill(c); }, 20000);
+  const code = await new Promise<number | null>((resolve, reject) => c.on('error', reject).on('close', resolve)).finally(() => clearTimeout(timer));
+  if (timedOut) throw new Error('RuboCop não respondeu em 20 s.');
+  return rubocopOutput(code, out, err, text);
+});
 ipcMain.handle('run', (_e, id: string, cmd: string, args: string[], cwd: string, env?: Record<string, string>) => {
   // Tests and the profiler pass env: rspec/minitest sync their own output, and sync writes would skew profiles.
   const c = shellSpawn(cmd, args, cwd, env ?? syncOutput);
@@ -360,7 +379,22 @@ ipcMain.handle('stop', (_e, id: string) => { const c = runs.get(id); if (c) kill
 // A truncated settings file must not block startup.
 const loadSettings = () => fs.readFile(settingsPath(), 'utf8').then(JSON.parse).catch(() => ({})) as Promise<Record<string, unknown> | null>;
 ipcMain.handle('loadSettings', loadSettings);
-ipcMain.handle('saveSettings', (_e, s: unknown) => fs.writeFile(settingsPath(), JSON.stringify(s, null, 2)));
+// One process per window, all on the same settings.json: write a private temp file and rename it over, so a reader or a
+// concurrent save never sees half a file (the last save wins whole).
+let tmpSeq = 0;
+ipcMain.handle('saveSettings', async (_e, s: unknown) => {
+  const tmp = `${settingsPath()}.${process.pid}.${++tmpSeq}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(s, null, 2));
+    // Windows refuses (EPERM/EBUSY) a rename onto a file another save is replacing at that instant: retry briefly.
+    for (let i = 0; ; i++) {
+      try { await fs.rename(tmp, settingsPath()); break; } catch (e) {
+        if (i >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes((e as NodeJS.ErrnoException).code!)) throw e;
+        await new Promise(r => setTimeout(r, 25));
+      }
+    }
+  } catch (e) { await fs.rm(tmp, { force: true }); throw e; }
+});
 ipcMain.handle('lspStart', (_e, cmd: string, cwd: string) => startLsp(cmd, cwd));
 ipcMain.handle('lspStop', () => stopLsp());
 ipcMain.on('lspSend', (_e, msg: unknown) => { lsp?.stdin?.write(frame(msg)); });
@@ -503,17 +537,18 @@ async function openTarget(argv: string[], cwd: string): Promise<OpenTarget | nul
   }
   return null;
 }
-// Until the renderer takes initialPath, a path from another instance replaces the pending one instead of being sent.
-let openReady = false;
+// Once: a reload falls back to window.lastFolder instead of reopening the command-line path.
 let pendingOpen = openTarget(process.argv, process.cwd());
-ipcMain.handle('initialPath', () => { openReady = true; const p = pendingOpen; pendingOpen = Promise.resolve(null); return p; });
-app.on('second-instance', async (_e, _argv, _cwd, data) => {
-  if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); }
-  const d = data as { argv?: unknown; cwd?: unknown } | null;
-  if (!Array.isArray(d?.argv) || typeof d.cwd !== 'string') return;
-  const t = await openTarget(d.argv.map(String), d.cwd);
-  if (!t) return;
-  if (openReady) send('openPath', t.path, t.isFile); else pendingOpen = Promise.resolve(t);
+ipcMain.handle('initialPath', () => { const p = pendingOpen; pendingOpen = Promise.resolve(null); return p; });
+// One process per window: a new window is a new detached instance of this app, on the same --user-data-dir (E2E profiles).
+ipcMain.handle('openInNewWindow', async (_e, p: unknown) => {
+  if (typeof p !== 'string' || !path.isAbsolute(p) || !await exists(p)) throw new Error(`Caminho não encontrado: ${p}`);
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE; // would start the spawned app as plain Node
+  const flags = app.commandLine.hasSwitch('user-data-dir') ? [`--user-data-dir=${app.getPath('userData')}`] : [];
+  const c = spawn(process.execPath, [...(process.defaultApp ? [app.getAppPath()] : []), ...flags, p], { detached: true, stdio: 'ignore', env });
+  await new Promise((resolve, reject) => c.once('spawn', resolve).once('error', reject));
+  c.unref();
 });
 
 ipcMain.handle('confirmClose',() => { if (afterClose === 'relaunch') app.relaunch(); allowClose = true; win?.close(); });

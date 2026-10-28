@@ -215,6 +215,26 @@ export function eventKey(e: { ctrlKey: boolean; metaKey: boolean; shiftKey: bool
   return [(e.ctrlKey || (platform === 'darwin' && e.metaKey)) && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', physical ?? e.key.toLowerCase()].filter(Boolean).join('+');
 }
 
+// Enter after `lines[opener]`, cursor on the line below: ruby-lsp adds `end` whenever the file has any syntax error,
+// even when this block is already closed. Closed = the first non-blank line after the cursor line is deeper (a body)
+// or a closing keyword at the opener's indent, or (unindented body) counting blocks below the opener reaches an `end`
+// at its indent. Comment lines never count (the server continues the comment).
+export function blockClosed(lines: string[], opener: number): boolean {
+  const open = lines[opener];
+  const next = lines.slice(opener + 2).find(l => l.trim());
+  if (open === undefined || next === undefined || open.trimStart().startsWith('#')) return false;
+  const depth = (l: string) => l.length - l.trimStart().length;
+  if (depth(next) > depth(open) || (depth(next) === depth(open) && /^\s*(end|else|elsif|when|in|rescue|ensure)\b/.test(next))) return true;
+  // shortcut: keywords only, no heredocs/%-literals/`x = if`; a miss mostly means "open", so the server adds `end` as before.
+  let level = 0;
+  for (const raw of lines.slice(opener + 1)) {
+    const l = raw.replace(/(["'])(?:\\.|(?!\1).)*\1/g, '""').replace(/#.*/, '');
+    level += (/^\s*(if|unless|while|until|case|def|class|module|begin|for)\b|\bdo\s*(\|[^|]*\|)?\s*$/.test(l) ? 1 : 0) - (l.match(/(?<![.:])\bend\b/g)?.length ?? 0);
+    if (level < 0) return /^\s*end\b/.test(l) && depth(l) === depth(open);
+  }
+  return false;
+}
+
 // Read-only git commands run without optional locks (like VS Code): `git status` would otherwise rewrite .git/index,
 // and the file watcher would see that as a change and refresh again, forever.
 export function gitArgs(args: string[]): string[] {

@@ -12,7 +12,7 @@ interface Frame { id: number; name: string; line: number; source?: { path?: stri
 interface Var { name: string; value: string; type?: string; variablesReference: number }
 
 let state: 'off' | 'running' | 'paused' = 'off';
-let seq = 1, threadId = 1, skipEntry = false, localfs = true;
+let seq = 1, threadId = 1, skipEntry = false, localfs = true, launched = false;
 let steppedOutOf: string | undefined; // frame name when Step Out was pressed
 // Remote attach: project folder on the server <-> this workspace. Translated here because the debug gem's own
 // localfsMap splits on every ':' and cannot hold a Windows path such as C:\proj.
@@ -115,6 +115,8 @@ function setState(s: typeof state) {
   state = s;
   document.querySelectorAll<HTMLElement>('[data-when]').forEach(el => el.classList.toggle('disabled', !el.dataset.when!.split(' ').includes(s)));
   $('#statusbar').classList.toggle('debugging', s !== 'off');
+  $('#debug-toolbar').hidden = s === 'off';
+  $('#debug-stdin').hidden = s === 'off' || !launched; // attach has no stdin of ours
 }
 
 export async function start(cmd: string, args: string[]) {
@@ -122,6 +124,7 @@ export async function start(cmd: string, args: string[]) {
   consoleText = '';
   log(`> ${[cmd, ...args].join(' ')}\n`);
   Panel.show('debug');
+  launched = true;
   setState('running');
   localfs = true;
   pathMap = undefined;
@@ -137,6 +140,7 @@ export async function attach() {
   consoleText = '';
   log(`> anexar ${target}\n`);
   Panel.show('debug');
+  launched = false;
   setState('running');
   // Without a folder map, breakpoint paths only match when the debuggee sees the same files (same machine).
   pathMap = m[3] ? { remote: m[3].replace(/\\/g, '/').replace(/\/?$/, '/'), local: ws.root + ws.sep } : undefined;
@@ -337,20 +341,23 @@ export function initDebug(onStartFile: () => void) {
   Editor.onDidChange(() => { const m = Editor.editor.getModel(); if (m && !decoIds.has(m)) paintBreakpoints(m); });
   monaco.editor.onDidCreateModel(m => m.onDidChangeContent(() => trackLines(m)));
 
-  const action = (name: string, title: string, when: string, run: () => unknown) => {
-    const el = icon(name, title);
+  const action = (tag: 'span' | 'button') => ([name, title, when, run]: [string, string, string, () => unknown]) => {
+    const el = h(tag, { className: `codicon codicon-${name}`, title });
+    el.setAttribute('aria-label', title);
     el.dataset.when = when;
     el.onclick = () => void run();
     return el;
   };
-  $('#debug-actions').replaceChildren(
-    action('debug-start', 'Iniciar depuração do arquivo (F5)', 'off', onStartFile),
-    action('debug-continue', 'Continuar (F5)', 'paused', cont),
-    action('debug-step-over', 'Passar por cima (F10)', 'paused', stepOver),
-    action('debug-step-into', 'Entrar (F11)', 'paused', stepInto),
-    action('debug-step-out', 'Sair (Shift+F11)', 'paused', stepOut),
-    action('debug-stop', 'Parar (Shift+F5)', 'running paused', stop),
-  );
+  const steps: [string, string, string, () => unknown][] = [
+    ['debug-continue', 'Continuar (F5)', 'paused', cont],
+    ['debug-step-over', 'Passar por cima (F10)', 'paused', stepOver],
+    ['debug-step-into', 'Entrar (F11)', 'paused', stepInto],
+    ['debug-step-out', 'Sair (Shift+F11)', 'paused', stepOut],
+    ['debug-stop', 'Parar (Shift+F5)', 'running paused', stop],
+  ];
+  $('#debug-actions').replaceChildren(...[['debug-start', 'Iniciar depuração do arquivo (F5)', 'off', onStartFile] as typeof steps[0], ...steps].map(action('span')));
+  // The sidebar may show another view (or be hidden) when a breakpoint hits: these float over the editor during a session.
+  $('#debug-toolbar').replaceChildren(...steps.map(action('button')));
   $('#debug-watch-add').onclick = async e => {
     e.stopPropagation();
     const expr = await prompt('Expressão para inspecionar');
@@ -361,6 +368,13 @@ export function initDebug(onStartFile: () => void) {
     if (e.key !== 'Enter' || !input.value.trim()) return;
     void evaluateRepl(input.value.trim());
     input.value = '';
+  };
+  const stdin = $('#debug-stdin') as HTMLInputElement;
+  stdin.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    api.debugWrite(stdin.value + '\n');
+    log(stdin.value + '\n');
+    stdin.value = '';
   };
 
   api.onDapConnected(async () => {

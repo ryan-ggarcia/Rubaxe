@@ -448,6 +448,7 @@ export function registerIntentions(enabled: (feature: 'intentions' | 'generate')
       const file = await localeFile();
       const { api } = await import('./dom.ts');
       const i18nKeys = file ? localeKeys(await api.readFile(file).catch(() => '')) : undefined;
+      if (model.isDisposed()) return { actions: [], dispose() {} }; // tab closed while reading the locale file
       const all = intentionsAt(model.getLinesContent(), { sl: r.startLineNumber, sc: r.startColumn, el: r.endLineNumber, ec: r.endColumn }, { spec: /_spec\.rb$/.test(model.uri.path), i18nKeys });
       const actions = all.filter(x => enabled(/^(Gerar|Introduzir)/.test(x.title) ? 'generate' : 'intentions')).map(x => ({
         title: x.title, kind: 'refactor.rewrite',

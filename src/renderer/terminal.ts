@@ -17,7 +17,7 @@ export async function pickProfile(placeholder: string, run: (p: Profile) => void
   quickPick({ placeholder, items: () => shells.map(p => ({ label: p.name, description: p.path, icon: PROFILE_ICONS.find(([re]) => re.test(p.name))?.[1] ?? 'terminal', run: () => run(p) })) });
 }
 
-export interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string }
+export interface Term { id: string; title: string; xterm: Terminal; fit: FitAddon; el: HTMLElement; alive: boolean; console: boolean; tail: string; cwd: string }
 
 // irb(main):001>, pry(main)>, myapp(dev)> — the console is ready for input once its prompt shows.
 const PROMPT = /\w+\([\w:-]+\)(:\d+)?[>*]\s*$/;
@@ -67,7 +67,7 @@ export async function create(title?: string, command?: string, isConsole = false
   const chosen = Features.get<string>('terminal.shell');
   const shells = profile ? [] : await api.listShells().catch(() => []);
   const p = profile ?? (chosen ? shells.find(s => s.name === chosen) ?? { name: chosen, path: chosen, args: [] } : shells[0]);
-  const t: Term = { id: String(++seq), title: title ?? p?.name ?? 'terminal', xterm, fit, el, alive: true, console: isConsole, tail: '' };
+  const t: Term = { id: String(++seq), title: title ?? p?.name ?? 'terminal', xterm, fit, el, alive: true, console: isConsole, tail: '', cwd: ws.root };
   terms.push(t);
   select(t);
   fit.fit();
@@ -80,7 +80,7 @@ export async function create(title?: string, command?: string, isConsole = false
   xterm.onData(d => api.ptyWrite(t.id, d));
   xterm.onResize(({ cols, rows }) => api.ptyResize(t.id, cols, rows));
   try {
-    await api.ptySpawn(t.id, ws.root, xterm.cols, xterm.rows, p?.path ?? '', p?.args);
+    await api.ptySpawn(t.id, t.cwd, xterm.cols, xterm.rows, p?.path ?? '', p?.args);
   } catch (e) {
     t.alive = false;
     xterm.write(`\r\nNão foi possível abrir o terminal: ${ipcMessage(e)}\r\n`);
@@ -92,9 +92,11 @@ export async function create(title?: string, command?: string, isConsole = false
 
 export function show() {
   if (!allowed('terminal')) return;
-  if (!terms.length) return void create();
+  // Shells keep the folder they started in: after opening another project, show one started there (or a new one).
+  const here = terms.filter(t => t.cwd === ws.root);
+  if (!here.length) return void create();
   Panel.show('terminal');
-  select(active ?? terms[terms.length - 1]);
+  select(active && here.includes(active) ? active : here[here.length - 1]);
 }
 
 export function kill(t = active) {

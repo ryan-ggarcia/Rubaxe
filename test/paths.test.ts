@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { ANSI, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { ANSI, blockClosed, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -183,4 +183,22 @@ test('tabs sharing a file name show the folder that tells them apart', () => {
   assert.deepStrictEqual(tabDescriptions(views, w`C:\p`, '\\'), [w`…\articles`, w`…\comments`, w`…\user_posts`]);
   // Same last folder: two segments needed; a folder that is a suffix of the other shows whole.
   assert.deepStrictEqual(tabDescriptions(['/p/src/a/x/f.rb', '/p/lib/b/x/f.rb', '/p/x/f.rb'], '/p', '/'), ['…/a/x', '…/b/x', 'x']);
+});
+
+test('auto end is skipped only when the block below the opener is already closed', () => {
+  // Opener on line 0, cursor on line 1 (just inserted by Enter).
+  assert.strictEqual(blockClosed(['if x', '  '], 0), false); // nothing below: add end
+  assert.strictEqual(blockClosed(['if x', '  ', '', 'end'], 0), true); // repeated Enter on an empty block
+  assert.strictEqual(blockClosed(['if x', '  ', '  foo', 'end'], 0), true); // existing body
+  assert.strictEqual(blockClosed(['case a', '  ', 'when 1'], 0), true);
+  assert.strictEqual(blockClosed(['def a', '  if x', '    ', '  foo', 'end'], 1), false); // sibling statement: still open
+  assert.strictEqual(blockClosed(['def a', '  if x', '    ', 'end'], 1), false); // the outer end is not this block's
+  assert.strictEqual(blockClosed(['# if x', '# ', '  foo'], 0), false); // comment continuation stays
+  assert.strictEqual(blockClosed(['  '], -1), false);
+  // Unindented body: the matching end is found by counting blocks.
+  assert.strictEqual(blockClosed(['if x', '', 'puts 1', 'end'], 0), true);
+  assert.strictEqual(blockClosed(['if x', '', 'foo do |a|', 'end', 'puts "end" # end', 'end'], 0), true);
+  assert.strictEqual(blockClosed(['if x', '', 'puts "end" # end'], 0), false); // end in a string or comment
+  assert.strictEqual(blockClosed(['def a', '', 'def b', 'end'], 0), false); // new block before another method
+  assert.strictEqual(blockClosed(['class C', '  def a', '    ', '  def b', '  end', 'end'], 1), false);
 });

@@ -70,6 +70,7 @@ export const MIN_ZOOM = Math.log(0.8) / Math.log(1.2);
 
 const SETTINGS: Setting[] = [
   ['Aparência', 'workbench.theme', 'Tema de cores da interface, do editor e do terminal.', ['escuro', 'claro'], 'escuro'],
+  ['Aparência', 'workbench.background', 'Fundo da janela: "gradiente" põe um degradê de vermelho Ruby e preto (no tema claro, branco e vermelho) atrás dos painéis, que ficam mais translúcidos, e desfoca mais o fundo de menus, paleta e notificações; "liso" é o visual anterior, de cor única.', ['gradiente', 'liso'], 'gradiente'],
   ['Aparência', 'window.zoomLevel', 'Nível de zoom da janela: 0 = 100%, cada passo multiplica por 1,2 (1 = 120%, -1 ≈ 83%). Mínimo 80% (≈ -1,22), máximo 8. Atalhos: Ctrl+= / Ctrl+- / Ctrl+0.', 'number', 0],
   ['Aparência', 'window.controls', 'Botões da janela (fora do macOS): "nativos" usa os do sistema; "mac" desenha círculos coloridos à esquerda. Reinicia o Rubaxe ao mudar.', ['nativos', 'mac'], 'nativos'],
   ['Aparência', 'window.transparent', 'Janela transparente (só Linux): mostra a área de trabalho atrás da janela. O Linux não desfoca sozinho: para o desfoque estilo macOS, instale a extensão Blur my Shell, coloque rubaxe na lista de Aplicativos e desligue a Opacidade dinâmica (senão o desfoque some quando a janela está em foco). Usa os botões coloridos do Rubaxe. Sem sombra; para redimensionar, arraste bem rente à borda (ou use Super + arrastar com o botão do meio). Reinicia o Rubaxe ao mudar.', 'boolean', false],
@@ -85,6 +86,7 @@ const SETTINGS: Setting[] = [
   ['Editor', 'editor.fontFamily', 'Fonte do editor. Padrão: JetBrains Mono, a mesma do RubyMine.', 'string', "'JetBrains Mono', Consolas, 'Courier New', monospace"],
   ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
   ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],
+  ['Editor', 'editor.formatOnIdle', 'Formatar o arquivo Ruby 2 s depois de parar de digitar.', 'boolean', true],
   ['Editor', 'editor.minimap', 'Mostrar minimapa.', 'boolean', true],
   ['Editor', 'editor.wordWrap', 'Quebrar linhas longas.', 'boolean', false],
   ...STYLE_SETTINGS.map(([key, desc, type, def]): Setting => ['Estilo de código (RuboCop)', key, desc, type, def]),

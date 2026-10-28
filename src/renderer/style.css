@@ -5,6 +5,7 @@
 :root {
   --bar: #181818; /* card background; translucent over acrylic (see data-material) */
   --chrome: #0C0C0D; /* window background behind the cards */
+  --bg-red: color-mix(in srgb, var(--accent) 60%, black); --bg-base: #0C0C0D; /* workbench.background = gradiente */
   --term-bg: #181818; /* same as the xterm theme in terminal.ts */
   --editor: #1F1F1F;
   --border: #2B2B2B;
@@ -50,12 +51,29 @@
 /* Linux transparent: no blur, so the desktop shows sharp; .92 keeps --fg and --muted at 4.5:1 and other windows' text faint (1.31:1), the gaps keep a tint. */
 [data-material="glass"][data-transparent] { --bar: rgba(24, 24, 24, .92); --widget: rgba(34, 34, 34, .92); --chrome: rgba(12, 12, 13, .8); }
 [data-material="glass"][data-transparent][data-theme="light"] { --bar: rgba(243, 243, 243, .92); --widget: rgba(248, 248, 248, .92); --chrome: rgba(217, 218, 223, .8); }
+/* Gradient background: Ruby red (bottom left) into black, or white in the light theme; the top right stays --bg-base to match the
+   native title bar overlay. A fixed ::before so a transparent window's rounded corners clip it. At 60% over acrylic, cards at .75 keep
+   --fg/--muted at 4.5:1 or more with a white or a black desktop behind (dark: 7.8/4.6, light: 7.4/5.0; opaque window: 10.2/6.0, 8.9/6.0). */
+[data-bg="gradient"] { --bg-alpha: 100%; }
+[data-bg="gradient"][data-material] { --bg-alpha: 60%; }
+[data-bg="gradient"][data-material][data-transparent] { --chrome: transparent; } /* body's inset shadow would cover the gradient */
+[data-bg="gradient"] body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(to top right, color-mix(in srgb, var(--bg-red) var(--bg-alpha), transparent), color-mix(in srgb, var(--bg-base) var(--bg-alpha), transparent) 70%);
+}
+@media (prefers-reduced-transparency: no-preference) { /* :root outranks every --bar above (also Linux transparent: 10% desktop, as at .92) */
+  :root[data-bg="gradient"] { --bar: rgba(24, 24, 24, .75); --widget: rgba(34, 34, 34, .75); }
+  :root[data-bg="gradient"][data-theme="light"] { --bar: rgba(243, 243, 243, .75); --widget: rgba(248, 248, 248, .75); }
+}
+[data-bg="gradient"] #titlebar { background: var(--bar); } /* no text straight on the gradient */
+[data-material="glass"] #quick-input, [data-material="glass"] #menubar, [data-material="glass"] .menu-popup { backdrop-filter: blur(24px) saturate(1.5); }
+/* After the glass rule (same specificity): the gradient keeps its stronger blur over acrylic. */
+[data-bg="gradient"] #quick-input, [data-bg="gradient"] #menubar, [data-bg="gradient"] .menu-popup, [data-bg="gradient"] .toast, [data-bg="gradient"] #debug-toolbar { backdrop-filter: blur(40px) saturate(1.6); }
 /* Frameless transparent window: round its corners like macOS; body's overflow: hidden clips the title bar. */
 [data-transparent]:not([data-maximized]) body { border-radius: var(--radius); }
 /* With no html background, body's background propagates to the canvas, which ignores border-radius; an inset shadow is clipped by it. */
 [data-transparent] body { background: none; box-shadow: inset 0 0 0 100vmax var(--chrome); }
 [data-material="glass"] #titlebar { background: var(--bar); } /* a bare backdrop fails AA (1.08:1 light over black) */
-[data-material="glass"] #quick-input, [data-material="glass"] #menubar, [data-material="glass"] .menu-popup { backdrop-filter: blur(24px) saturate(1.5); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
@@ -273,8 +291,13 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .monaco-editor .bp-glyph, .monaco-editor .bp-hint,.monaco-editor .debug-frame-glyph { font-size: 14px !important; display: flex; align-items: center; justify-content: center; }
 #panel-debug { display: flex; flex-direction: column; padding-bottom: 6px; }
 #debug-console { flex: 1; overflow: auto; margin: 0; font: 12px/1.4 Consolas, 'Courier New', monospace; white-space: pre-wrap; }
-#debug-input { font-family: Consolas, 'Courier New', monospace; }
+#debug-input, #debug-stdin { font-family: Consolas, 'Courier New', monospace; }
+#debug-stdin { margin-bottom: 4px; }
 #statusbar.debugging { background: #CC6633; color: #fff; }
+#debug-toolbar { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 2px; padding: 3px; background: var(--widget); border: 1px solid var(--input-border); border-radius: 8px; }
+#debug-toolbar button { padding: 4px; border: none; border-radius: 4px; background: none; color: var(--fg); cursor: pointer; }
+#debug-toolbar button:hover { background: var(--hover); }
+#debug-toolbar .codicon-debug-stop { color: var(--error); }
 
 /* Source control */
 .scm-commit { padding: 0 8px 8px 20px; flex: none; }
@@ -409,7 +432,7 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 [data-theme="light"] {
   --bar: #F3F3F3; --editor: #FFFFFF; --border: #E0E0E0; --fg: #3B3B3B; --muted: #545454; --accent: #CC342D;
   --input: #FFFFFF; --input-border: #C8C8C8; --hover: #ECECEC; --selected: #E4E6F1; --focus: #F6D5D2; --widget: #F8F8F8;
-  --error: #C42B1C; --warning: #7A5C00;
+  --error: #A1201A; --warning: #7A5C00; /* red text (also --accent-text): 6.1:1 on a gradient card, 5.1:1 with a black desktop behind */
 }
 [data-theme="light"] .ab-item { color: #4A4A4A; } /* 4.5:1 over the glass card with black behind */
 [data-theme="light"] .ab-item:hover, [data-theme="light"] .ab-item.active { color: #1F1F1F; }
@@ -472,7 +495,7 @@ kbd { background: #FFFFFF14; border: 1px solid #FFFFFF26; border-bottom-color: #
 .ficon .s.ic-file { fill: none; stroke: var(--ic-file); }
 
 /* Light theme additions for the floating-card layout */
-[data-theme="light"] { --term-bg: #F3F3F3; --chrome: #D9DADF; --accent-text: var(--accent); --folder-back: #3A86CC; --folder-front: #8CCBFA; --ic-ink: #FFFFFF; --ic-ruby: #CC342D; --ic-ruby-top: #F2938C; --ic-ruby-hi: #E0544B; --ic-ruby-lo: #8E1B16; --ic-db: #0F7B6C;
+[data-theme="light"] { --bg-red: color-mix(in srgb, var(--accent) 40%, white); --bg-base: #FFFFFF; --term-bg: #F3F3F3; --chrome: #D9DADF; --accent-text: #A1201A; --folder-back: #3A86CC; --folder-front: #8CCBFA; --ic-ink: #FFFFFF; --ic-ruby: #CC342D; --ic-ruby-top: #F2938C; --ic-ruby-hi: #E0544B; --ic-ruby-lo: #8E1B16; --ic-db: #0F7B6C;
   --ic-erb: #C8501F; --ic-yaml: #7E48B8; --ic-json: #A87B00; --ic-lock: #5F6C80; --ic-md: #2F6FB5; --ic-js: #B79B00; --ic-ts: #2E73C4; --ic-css: #2D7FC9; --ic-html: #C25E17; --ic-file: #6A7280; --focus: #CC342D2E; --ok: #1E7B45; }
 [data-theme="light"][data-material="glass"] { --chrome: transparent; }
 [data-theme="light"] .tb-btn:hover, [data-theme="light"] .tb-chip:hover, [data-theme="light"] .tb-btn.active, [data-theme="light"] .ab-item:hover, [data-theme="light"] .tab:hover { background: #0000001A; }

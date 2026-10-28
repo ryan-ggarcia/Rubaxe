@@ -104,6 +104,7 @@
         <div id="settings-page" hidden></div>
         <div id="preview-page" hidden></div>
         <div id="welcome"></div>
+        <div id="debug-toolbar" role="toolbar" aria-label="Depuração" hidden></div>
       </div>
       </div>
       <div class="sash horizontal" id="sash-panel"></div>
@@ -130,6 +131,7 @@
         <div class="panel-body" id="panel-terminal" hidden><div id="terminal-host"></div></div>
         <div class="panel-body" id="panel-debug" hidden>
           <pre id="debug-console"></pre>
+          <input class="input" id="debug-stdin" placeholder="Entrada do programa (Enter envia)" spellcheck="false" hidden>
           <input class="input" id="debug-input" placeholder="Avaliar expressão Ruby no frame selecionado (Enter)" spellcheck="false">
         </div>
       </section>

@@ -30,7 +30,7 @@ const lspLog: string[] = [];
 
 const commands: Command[] = [
   { id: 'openFolder', label: 'Arquivo: Abrir Pasta...', key: 'Ctrl+O', icon: 'folder-opened', run: () => openFolder() },
-  { id: 'openFile', label: 'Arquivo: Abrir Arquivo...', icon: 'go-to-file', run: async () => { const f = await api.openFileDialog(); if (f) await Editor.openFile(f); } },
+  { id: 'openFile', label: 'Arquivo: Abrir Arquivo...', icon: 'go-to-file', run: async () => { const f = await api.openFileDialog(); if (f && await openHere(f)) await Editor.openFile(f); } },
   { id: 'save', label: 'Arquivo: Salvar', key: 'Ctrl+S', icon: 'save', run: () => Editor.save() },
   { id: 'closeTab', label: 'Arquivo: Fechar Editor', key: 'Ctrl+W', icon: 'close', run: () => Editor.active && Editor.closeTab(Editor.active) },
   { id: 'quickOpen', label: 'Ir: Arquivo...', key: 'Ctrl+P', icon: 'go-to-file', run: () => quickOpen() },
@@ -98,6 +98,7 @@ const commands: Command[] = [
   { id: 'irb', label: 'Ruby: Console IRB', icon: 'terminal', run: () => openIrb() },
   { id: 'setupRuby', label: 'Ruby: Configurar Ambiente (Ruby, ruby-lsp, ridk)', icon: 'tools', run: () => setupRuby() },
   { id: 'intentions', label: 'Editor: Mostrar Ações e Correções Rápidas', key: 'Alt+Enter', icon: 'lightbulb', run: () => { Editor.editor.focus(); Editor.editor.trigger('menu', 'editor.action.quickFix', null); } },
+  { id: 'formatDocument', label: 'Editor: Formatar Documento', key: 'Shift+Alt+F', icon: 'list-flat', run: () => { Editor.editor.focus(); if (Editor.editor.getModel()) void Editor.editor.getAction('editor.action.formatDocument')?.run(); } },
   { id: 'sendToConsole', label: 'Ruby: Enviar Seleção ao Console', key: 'Shift+Alt+Enter', icon: 'send', run: () => Terminal.sendSelection(openIrb) },
   { id: 'scmView', label: 'Exibir: Controle de Código', key: 'Ctrl+Shift+G', icon: 'source-control', run: () => showView('scm') },
   { id: 'gitCommit', label: 'Git: Commit', icon: 'check', run: () => Git.commit() },
@@ -156,7 +157,7 @@ const MENUS: [string, Entry[]][] = [
   ['Editar', [act('Desfazer', 'undo', 'Ctrl+Z'), act('Refazer', 'redo', 'Ctrl+Y'), null,
     act('Recortar', 'editor.action.clipboardCutAction', 'Ctrl+X'), act('Copiar', 'editor.action.clipboardCopyAction', 'Ctrl+C'), act('Colar', 'editor.action.clipboardPasteAction', 'Ctrl+V'), null,
     act('Localizar', 'actions.find', 'Ctrl+F'), act('Substituir', 'editor.action.startFindReplace', 'Ctrl+H'), 'search', null,
-    act('Comentar Linha', 'editor.action.commentLine', 'Ctrl+/')]],
+    act('Comentar Linha', 'editor.action.commentLine', 'Ctrl+/'), 'formatDocument']],
   ['Seleção', [act('Selecionar Tudo', 'editor.action.selectAll', 'Ctrl+A'), act('Expandir Seleção', 'editor.action.smartSelect.expand', 'Shift+Alt+→'), null,
     act('Copiar Linha para Cima', 'editor.action.copyLinesUpAction', 'Shift+Alt+↑'), act('Copiar Linha para Baixo', 'editor.action.copyLinesDownAction', 'Shift+Alt+↓'),
     act('Mover Linha para Cima', 'editor.action.moveLinesUpAction', 'Alt+↑'), act('Mover Linha para Baixo', 'editor.action.moveLinesDownAction', 'Alt+↓'), null,
@@ -363,9 +364,26 @@ async function startLsp() {
   });
 }
 
+// After the Open File/Folder dialog with a project open: "Nesta janela" resolves true; "Nova janela" hands the path
+// to a new window and, like Esc, resolves false.
+function openHere(path: string): Promise<boolean> {
+  if (!ws.root) return Promise.resolve(true);
+  return new Promise(resolve => quickPick({
+    placeholder: `Abrir ${basename(path)} em...`,
+    items: () => [
+      { label: 'Nesta janela', icon: 'window', run: () => resolve(true) },
+      { label: 'Nova janela', icon: 'empty-window', run: () => {
+        resolve(false);
+        api.openInNewWindow(path).catch(e => notify(`Falha ao abrir nova janela: ${(e as Error).message}`, 'error'));
+      } },
+    ],
+    onDismiss: () => resolve(false),
+  }));
+}
+
 async function openFolder(path?: string) {
   const target = path ?? await api.openFolder();
-  if (!target || !Editor.closeAll()) return;
+  if (!target || (!path && !await openHere(target)) || !Editor.closeAll()) return;
   ws.root = target;
   void api.watchFolder(target);
   ws.files = await api.listFiles(target);
@@ -400,11 +418,6 @@ async function openTarget(path: string, isFile: boolean) {
   }
   if (inside()) await Editor.openFile(path);
 }
-
-// Opens run one at a time so a second `rubaxe <path>` waits for the unsaved-changes question of the first.
-let opening = Promise.resolve();
-const inOrder = (run: () => Promise<void>) =>
-  opening = opening.then(run).catch(e => notify(`Falha ao abrir: ${(e as Error).message}`, 'error'));
 
 // ---------- quick open ----------
 
@@ -464,7 +477,7 @@ function onSettingChange(key: string) {
   if (key.startsWith('editor.')) Editor.applyOptions();
   if (key === 'features.diagnostics') Lsp.refreshDiagnostics();
   if (key === 'features.documentSymbols') void renderOutline();
-  if (key === 'workbench.theme') applyTheme();
+  if (key === 'workbench.theme' || key === 'workbench.background') applyTheme();
   if (key === 'window.zoomLevel') applyZoom();
   if (key === 'window.controls' || key === 'window.transparent') { notify('Reiniciar para aplicar'); void api.saveSettings(Features.all()).then(() => api.relaunch()); }
   if (key === 'features.inspections') Ruby.inspectAll();
@@ -498,6 +511,7 @@ function initWindowControls(material: string) {
 // Live switch of every themed surface: CSS variables, Monaco and the terminals. (The window's native title bar overlay is the main process's.)
 function applyTheme() {
   document.documentElement.dataset.theme = Features.get<string>('workbench.theme') === 'claro' ? 'light' : 'dark';
+  document.documentElement.dataset.bg = Features.get<string>('workbench.background') === 'liso' ? 'flat' : 'gradient';
   monaco.editor.setTheme(document.documentElement.dataset.theme === 'light' ? 'rubaxe-light' : 'rubaxe-dark');
   Terminal.applyTheme();
   if (document.body.classList.contains('controls-mac')) return;
@@ -630,7 +644,7 @@ async function boot() {
   window.addEventListener('keydown', e => {
     const k = eventKey(e, api.platform);
     // In the terminal everything belongs to the shell (readline) except these IDE keys (Ctrl+Shift+V stays the terminal's paste).
-    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c|=|\+|-|0)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5)$/.test(k)) return;
+    if ((e.target as HTMLElement | null)?.closest?.('.xterm') && !/^(ctrl\+(shift\+)?(j|`|'|"|c|=|\+|-|0)|ctrl\+shift\+p|f1|f5|f9|f10|f11|shift\+f5|shift\+f11)$/.test(k)) return;
     const cmd = keymap.get(k);
     if (!cmd || cmd.when?.() === false) return;
     e.preventDefault();
@@ -650,13 +664,12 @@ async function boot() {
   Panel.toggle(false);
   Panel.refreshProblems();
   await renderExplorer();
-  api.onOpenPath((path, isFile) => void inOrder(() => openTarget(path, isFile)));
-  await inOrder(async () => {
+  try {
     const start = await api.initialPath();
     const last = Features.get<string | undefined>('window.lastFolder');
     if (start) await openTarget(start.path, start.isFile);
     else if (last && await api.exists(last)) await openFolder(last);
-  });
+  } catch (e) { notify(`Falha ao abrir: ${(e as Error).message}`, 'error'); }
 }
 
 const amd = (window as unknown as { require: { config(c: unknown): void; (deps: string[], cb: () => void): void } }).require;

@@ -29,6 +29,8 @@ const api = {
   listFiles: invoke<string[], [root: string]>('listFiles'),
   search: invoke<SearchHit[], [root: string, query: string, opts: { regex: boolean; caseSensitive: boolean }]>('search'),
   exec: invoke<ExecResult, [cmd: string, args: string[], cwd: string]>('exec'),
+  // Layout-only RuboCop fix of text as file (path decides .rubocop.yml); rejects with a message ready to show.
+  formatRuby: invoke<string, [path: string, text: string]>('formatRuby'),
   run: invoke<void, [id: string, cmd: string, args: string[], cwd: string, env?: Record<string, string>]>('run'),
   mkTemp: invoke<string>('mkTemp'),
   rubyHelpers: invoke<string>('rubyHelpers'),
@@ -52,6 +54,7 @@ const api = {
   debugAttach: invoke<void, [host: string, port: number]>('debugAttach'),
   debugStop: invoke<void>('debugStop'),
   dapSend: (msg: unknown) => ipcRenderer.send('dapSend', msg),
+  debugWrite: (data: string) => ipcRenderer.send('debugWrite', data), // stdin of the program under debugLaunch (not attach); send '\n' yourself
   onDapConnected: on<[]>('dapConnected'),
   onDapMessage: on<[msg: any]>('dapMessage'),
   onDebugOutput: on<[text: string]>('debugOutput'),
@@ -74,10 +77,10 @@ const api = {
   onUpdateStatus: on<[status: UpdateStatus]>('updateStatus'),
   installUpdate: () => ipcRenderer.send('installUpdate'), // 'ready' goes through onCloseRequest/confirmClose like relaunch
   checkForUpdates: invoke<void>('checkForUpdates'), // resolves when the check ends; the result arrives via onUpdateStatus
-  // Command line (`rubaxe <path>`). Register onOpenPath first, then await initialPath once at startup (null: use
-  // window.lastFolder); every later `rubaxe <path>` arrives through onOpenPath, the window already focused.
+  // Command line (`rubaxe <path>`): await initialPath once at startup (null: use window.lastFolder).
   initialPath: invoke<OpenTarget | null>('initialPath'),
-  onOpenPath: on<[path: string, isFile: boolean]>('openPath'),
+  // New window = new app process opening p (absolute, existing; rejects otherwise). Resolves once the process started.
+  openInNewWindow: invoke<void, [path: string]>('openInNewWindow'),
 };
 
 export type RubaxeApi = typeof api;
