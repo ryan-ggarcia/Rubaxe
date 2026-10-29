@@ -1,10 +1,11 @@
 // Editor group: tabs, Monaco models, open/save/close.
 import type * as M from 'monaco-editor';
+import { emmetHTML } from 'emmet-monaco-es';
 import { $, api, basename, h, notify, ws } from './dom.ts';
 import { fileSvg } from './file-icons.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
-import { erbMonarch, ipcMessage, languageFor, tabDescriptions } from './paths.ts';
+import { erbMonarch, ipcMessage, languageFor, tabDescriptions, tagToClose } from './paths.ts';
 
 export interface Tab {
   conflict?: string; // disk text that differs from this dirty tab (outside edit not yet decided on)
@@ -64,8 +65,38 @@ function registerErb() {
   env.getWorker = (id, label) => getWorker(id, label === 'erb' ? 'html' : label);
 }
 
+// Emmet in HTML/ERB text; the library reads the tokens, so tags and attributes never expand.
+// Registered for '*' and checked per model: that ranks it with Monaco's word suggestions, so both are listed. Under a language
+// id it would rank above them, and any Emmet item (`ta` → table…) would hide the words of the file.
+function registerEmmet() {
+  const L = monaco.languages;
+  const registerCompletionItemProvider = (_: M.languages.LanguageSelector, p: M.languages.CompletionItemProvider) => L.registerCompletionItemProvider('*', {
+    ...p,
+    // Not in embedded Ruby (<% %>), JS or CSS. The library caches Monaco's tokenizer per model object, but Monaco replaces it
+    // on a theme change or when the Ruby grammar loads (stale states, "reading 'depth'" errors): hand it a fresh object each call.
+    provideCompletionItems: (model, position, ...rest) => ['html', 'erb'].includes(model.getLanguageId()) && Features.on('emmet')
+      && Lsp.languageAt(model, position) === model.getLanguageId() ? p.provideCompletionItems(Object.create(model), position, ...rest) : undefined,
+  });
+  emmetHTML({ ...monaco, languages: { ...L, registerCompletionItemProvider } }, ['html']);
+}
+
+// html.autoClosingTags (Monaco has none): a typed `>` ending an opening tag gets `</tag>` after the cursor, as its own undo step.
+// onDidType (not in Monaco's typings) fires for keyboard typing only: no paste, IME or edits from code.
+function autoCloseTags() {
+  (editor as unknown as { onDidType(fn: (text: string) => void): void }).onDidType(text => {
+    const model = editor.getModel(), pos = editor.getPosition();
+    if (text !== '>' || !model || !pos || editor.getSelections()?.length !== 1 || !['html', 'erb'].includes(model.getLanguageId()) || !Features.on('autoCloseTags')) return;
+    const tag = tagToClose(model.getValueInRange(new monaco.Range(1, 1, pos.lineNumber, pos.column)), model.getLineContent(pos.lineNumber).slice(pos.column - 1));
+    if (!tag) return;
+    editor.pushUndoStop();
+    editor.executeEdits('autoCloseTags', [{ range: monaco.Range.fromPositions(pos), text: `</${tag}>` }], [monaco.Selection.fromPositions(pos)]);
+    editor.pushUndoStop();
+  });
+}
+
 export function createEditor(settingsRenderer: (container: HTMLElement) => void, previewRenderer: (tab: Tab, container: HTMLElement) => void) {
   registerErb();
+  registerEmmet();
   renderSettings = settingsRenderer;
   renderPreview = previewRenderer;
   editor = monaco.editor.create($('#editor'), {
@@ -82,46 +113,8 @@ export function createEditor(settingsRenderer: (container: HTMLElement) => void,
   monaco.editor.registerEditorOpener({ openCodeEditor: (_source, resource, selection) => { void openUri(resource, selection); return true; } });
   // Rename and quick-fixes can edit files without a tab: give them one so the change can be seen and saved.
   editor.onDidBlurEditorText(() => autoSave(active));
-  formatOnIdle();
+  autoCloseTags();
   monaco.editor.onDidCreateModel(model => model.onDidChangeContent(() => { if (model.uri.scheme === 'file' && !tabFor(model)) adopt(model); }));
-}
-
-// Formats a Ruby file 2 s after the last edit. The format's own edit schedules one more check, which finds the text already
-// formatted and stops; a failed attempt is not retried until the text changes.
-const formatted = new WeakMap<M.editor.ITextModel, string>(); // text already formatted (or tried): no automatic format for it
-function formatOnIdle() {
-  let timer: ReturnType<typeof setTimeout> | undefined, running = false, composing = false, touched = false;
-  editor.onDidCompositionStart(() => composing = true);
-  editor.onDidCompositionEnd(() => composing = false);
-  // Monaco drops the format if the user moves the cursor or types meanwhile; the format's own edit moves it as 'modelChange'.
-  editor.onDidChangeCursorSelection(e => { if (running && e.source !== 'modelChange') touched = true; });
-  editor.onDidChangeModelContent(e => {
-    clearTimeout(timer);
-    const model = editor.getModel();
-    if (!model || model.getLanguageId() !== 'ruby' || !Features.get<boolean>('editor.formatOnIdle')) return;
-    if (e.isUndoing || e.isRedoing) return void formatted.set(model, model.getValue()); // an undone format stays undone
-    timer = setTimeout(async () => {
-      const ctx = (editor as unknown as { _contextKeyService?: { getContextKeyValue(k: string): unknown } })._contextKeyService;
-      const before = model.getValue();
-      if (running || composing || model.isDisposed() || editor.getModel() !== model || active?.model !== model || !editor.hasTextFocus()
-        || !Features.on('formatting') || formatted.get(model) === before || ['suggestWidgetVisible', 'parameterHintsVisible'].some(k => ctx?.getContextKeyValue(k))) return;
-      running = true;
-      touched = false;
-      const atEnd = editor.getPosition()?.equals(model.getFullModelRange().getEndPosition());
-      try {
-        await Lsp.formatQuietly(() => editor.getAction('editor.action.formatDocument')!.run());
-      } finally {
-        running = false;
-        // Monaco dropped the result: keep the text the user has now eligible for the next round.
-        if (!model.isDisposed()) {
-          formatted.set(model, touched ? before : model.getValue());
-          // The final newline the formatter adds lands at the cursor when it sits at the end: keep it on the line being typed.
-          const n = model.getLineCount();
-          if (!touched && atEnd && !before.endsWith('\n') && model.getLineContent(n) === '' && editor.getModel() === model) editor.setPosition({ lineNumber: n - 1, column: model.getLineMaxColumn(n - 1) });
-        }
-      }
-    }, 2000);
-  });
 }
 
 export function applyOptions() {
@@ -304,7 +297,6 @@ export async function save(tab = active, auto = false): Promise<boolean> {
   if (auto && await api.readFile(tab.path).then(t => t !== tab.disk, () => false)) return false;
   if (!auto && Features.get<boolean>('editor.formatOnSave') && Features.on('formatting') && model.getLanguageId() === 'ruby' && editor.getModel() === model) {
     await editor.getAction('editor.action.formatDocument')?.run();
-    formatted.set(model, model.getValue());
   }
   const text = model.getValue();
   try {

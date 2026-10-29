@@ -56,6 +56,8 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['railsGenerators', 'Generators, servidor e migrations', 'ok'],
     ['railsRoutes', 'Completar rotas (_path/_url) e chaves i18n', 'ok'],
     ['erb', 'Views ERB: Ruby LSP dentro de <% %> (completar, documentação, F12)', 'ok'],
+    ['emmet', 'Emmet em HTML e ERB (h1, ul>li*3, div.card + Tab)', 'ok'],
+    ['autoCloseTags', 'Fechar a tag HTML ao digitar > (HTML e ERB)', 'ok'],
   ]],
   ['Ferramentas', [
     ['git', 'Git: status, diff, stage, commit, blame, branches', 'ok'],
@@ -87,7 +89,6 @@ const SETTINGS: Setting[] = [
   ['Editor', 'editor.fontFamily', 'Fonte do editor. Padrão: JetBrains Mono, a mesma do RubyMine.', 'string', "'JetBrains Mono', Consolas, 'Courier New', monospace"],
   ['Editor', 'editor.tabSize', 'Espaços por indentação.', 'number', 2],
   ['Editor', 'editor.formatOnSave', 'Formatar ao salvar.', 'boolean', false],
-  ['Editor', 'editor.formatOnIdle', 'Formatar o arquivo Ruby 2 s depois de parar de digitar.', 'boolean', true],
   ['Editor', 'editor.minimap', 'Mostrar minimapa.', 'boolean', true],
   ['Editor', 'editor.wordWrap', 'Quebrar linhas longas.', 'boolean', false],
   ...STYLE_SETTINGS.map(([key, desc, type, def]): Setting => ['Estilo de código (RuboCop)', key, desc, type, def]),

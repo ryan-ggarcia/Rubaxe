@@ -24,13 +24,6 @@ let hooks: Hooks | undefined;
 let semanticRegistered = false;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
 let noFormatter = false; // server found no formatter: format with RuboCop from PATH instead
-let quiet = false, warnedMissing = false; // idle format: no toast per failed attempt (mid-typing code is often invalid)
-
-// Runs a format without error toasts, except a one-time "RuboCop não encontrado".
-export async function formatQuietly(run: () => Promise<unknown>) {
-  quiet = true;
-  try { await run(); } finally { quiet = false; }
-}
 const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
 const opened = new Map<string, M.editor.ITextModel>();
 const listeners = new Map<string, { dispose(): void }>();
@@ -163,6 +156,11 @@ async function definitionHover(params: { textDocument: { uri: string }; position
   return { contents: [{ value: '```ruby\n' + sig.signature + '\n```' }, ...sig.doc ? [{ value: sig.doc.replace(/\n/g, '  \n') }] : [], { value: where }] };
 }
 
+// Language of the token before the cursor: 'ruby' inside ERB's <% %>, 'erb' in its HTML. (Monaco's models have
+// getLanguageIdAtPosition, its typings do not.)
+export const languageAt = (model: M.editor.ITextModel, p: M.IPosition) =>
+  (model as unknown as { getLanguageIdAtPosition(line: number, column: number): string }).getLanguageIdAtPosition(p.lineNumber, Math.max(1, p.column - 1));
+
 export function registerProviders() {
   // ruby-lsp answers these inside ERB tags too; the rest (references, rename, formatting...) is Ruby only.
   const L = monaco.languages, id = 'ruby', erb = ['ruby', 'erb'];
@@ -232,14 +230,12 @@ export function registerProviders() {
       // ruby-lsp only formats with a formatter gem in the Gemfile: otherwise (or with the LSP off) run RuboCop from PATH.
       // Monaco drops the edit if the text or cursor changed meanwhile, and diffs it into minimal edits (one undo step).
       if ((!ready || noFormatter) && Features.on('formatting') && model.uri.scheme === 'file') {
-        const text = model.getValue(), silent = quiet;
+        const text = model.getValue();
         try {
           const out = await api.formatRuby(model.uri.fsPath, text);
           return out === text ? [] : [{ range: model.getFullModelRange(), text: out }];
         } catch (e) {
-          const msg = ipcMessage(e), missing = msg.startsWith('RuboCop não encontrado');
-          if (!silent || (missing && !warnedMissing)) toast(msg, 'error');
-          warnedMissing ||= missing;
+          toast(ipcMessage(e), 'error');
           return [];
         }
       }

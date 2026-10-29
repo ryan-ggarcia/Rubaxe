@@ -54,6 +54,17 @@ export function erbMonarch<T extends { tokenizer: Record<string, unknown[]> }>(h
   } };
 }
 
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+// Tag to close after a typed `>` (HTML/ERB): `before` = text up to the cursor, `after` = rest of the line.
+// ERB tags and HTML comments, closed or still open, are blanked first: their `>` (and one inside `<% a > b %>`) closes nothing.
+// shortcut: `<script>`/`<style>` bodies are read as HTML, so `"<b>"` typed in JS closes too; parse the document if it bothers.
+export function tagToClose(before: string, after: string): string | undefined {
+  const text = before.replace(/<%[\s\S]*?(?:%>|$)|<!--[\s\S]*?(?:-->|$)/g, ' ');
+  const tag = /<([A-Za-z][\w:.-]*)(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?(?<!\/)>$/.exec(text)?.[1];
+  return tag && !VOID_TAGS.has(tag.toLowerCase()) && !after.toLowerCase().startsWith(`</${tag.toLowerCase()}>`) ? tag : undefined;
+}
+
 // Hover fallback when ruby-lsp has none: the definition line (0-based `line`) and the `#` comments right above it.
 export function defSignature(text: string, line: number): { signature: string; doc: string } | undefined {
   const lines = text.split(/\r?\n/), signature = lines[line]?.trim();

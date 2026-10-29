@@ -196,7 +196,8 @@ export function initRails() {
   for (const lang of ['ruby', 'erb']) monaco.languages.registerCompletionItemProvider(lang, {
     triggerCharacters: ["'", '"', '.'],
     async provideCompletionItems(model, position) {
-      if (!ws.isRails || !Features.on('railsRoutes')) return { suggestions: [] };
+      // In ERB's HTML a route list would hide Emmet and the words of the file (Monaco shows only the first group with results).
+      if (!ws.isRails || !Features.on('railsRoutes') || Lsp.languageAt(model, position) !== 'ruby') return { suggestions: [] };
       const line = position.lineNumber;
       const before = model.getValueInRange(new monaco.Range(line, 1, line, position.column));
       const key = /\b(?:I18n\.)?t\(?\s*["']([\w.]*)$/.exec(before);

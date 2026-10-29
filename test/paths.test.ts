@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { ANSI, blockClosed, defSignature, erbMonarch, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { ANSI, blockClosed, defSignature, erbMonarch, tagToClose, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -39,6 +39,22 @@ test('ERB grammar opens Ruby on <% / <%= / <%- in every HTML state and closes on
   assert.deepStrictEqual(['%>', '-%>'].map(s => close[0].exec(s)?.[0]), ['%>', '-%>']);
   assert.strictEqual(close[1].nextEmbedded, '@pop');
   assert.strictEqual(g.tokenPostfix, '.html');
+});
+
+test('a typed > closes the opening tag before it, except void tags, ERB, comments and attribute values', () => {
+  const close = (before: string, after = '') => tagToClose(before, after);
+  assert.strictEqual(close('<h1>'), 'h1');
+  assert.strictEqual(close('<p>\n  <div class="x">'), 'div');
+  assert.strictEqual(close('<div\n  class="a > b" data-x=\'<y>\'>'), 'div');
+  assert.strictEqual(close('<a href="<%= url("x") %>">'), 'a');
+  assert.strictEqual(close('<div <%= attrs %>>'), 'div');
+  assert.strictEqual(close('<my-widget>'), 'my-widget');
+  for (const s of ['<br>', '<IMG src="x">', '<input type="text">', '<meta charset="utf-8">', '<link rel="x">', '<hr>', '<area>', '<base>',
+    '<col>', '<embed>', '<source>', '<track>', '<wbr>', '<param>', '<div/>', '<h1 />', '</h1>', '<!DOCTYPE html>', '<!-- x -->',
+    '<!-- <div>', '<% if x %>', '<%= link_to "a", b %>', '<%- y -%>', '<%# <div> %>', '<%= a >', '<div class="<%= a >', '<a title="x >',
+    'ul>', '<p>a =>', 'x > y']) assert.strictEqual(close(s), undefined, s);
+  assert.strictEqual(close('<h1>', '</h1>'), undefined); // already closed right after the cursor
+  assert.strictEqual(close('<h1>', ' </h1>'), 'h1');
 });
 
 test('hover fallback shows the definition line and the comments right above it', () => {
