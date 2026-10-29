@@ -208,7 +208,8 @@ export function initRails() {
       if (!word.word || /["']/.test(before.slice(-word.word.length - 1, -word.word.length))) return { suggestions: [] };
       const range = new monaco.Range(line, word.startColumn, line, word.endColumn);
       return {
-        suggestions: (await loadRoutes()).flatMap(r => ['_path', '_url'].map(suffix => ({
+        // Only matching routes: any result here makes Monaco skip its word-based suggestions.
+        suggestions: (await loadRoutes()).flatMap(r => ['_path', '_url'].filter(suffix => (r.helper + suffix).startsWith(word.word)).map(suffix => ({
           label: r.helper + suffix, kind: monaco.languages.CompletionItemKind.Function, insertText: r.helper + suffix, range,
           detail: `${r.verb} ${r.path}`, documentation: r.action,
         }))),
