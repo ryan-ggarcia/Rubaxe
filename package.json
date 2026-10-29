@@ -1,6 +1,6 @@
 {
   "name": "rubaxe",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "IDE rápida para Ruby: suporte Ruby inspirado no RubyMine, interface no estilo VS Code.",
   "main": "dist/main.js",
   "private": true,
