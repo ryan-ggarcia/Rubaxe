@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { ANSI, blockClosed, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
+import { ANSI, blockClosed, defSignature, erbMonarch, fixtureAccessor, outermost, dropPlan, rangeBetween, tabDescriptions, mdTarget, fileUrl, headingSlugs, parseInspections, camelize, underscore, needsPluralConfirm, railsRenamePlan, railsRenameText, railsReview, eventKey, gitArgs, usesStandard, isGemfile, specDirs, rspecFolderArgs, testTarget, ipcMessage, testCandidates, implCandidates, fuzzyScore, languageFor, relativeTo, parseRakeTasks, testLines, minitestNameAt, parseTestReport } from '../src/renderer/paths.ts';
 
 test('go to test follows Rails and gem conventions', () => {
   assert.deepStrictEqual(testCandidates('app/models/user.rb'), ['spec/models/user_spec.rb', 'test/models/user_test.rb']);
@@ -20,7 +20,33 @@ test('ruby language detection covers extensionless files', () => {
   assert.strictEqual(languageFor('C:\\p\\Gemfile'), 'ruby');
   assert.strictEqual(languageFor('lib/tasks/db.rake'), 'ruby');
   assert.strictEqual(languageFor('README.md'), undefined);
-  assert.strictEqual(languageFor('app/views/posts/index.html.erb'), 'html');
+  assert.strictEqual(languageFor('app/views/posts/index.html.erb'), 'erb');
+});
+
+test('ERB grammar opens Ruby on <% / <%= / <%- in every HTML state and closes on %> / -%>', () => {
+  const tag = [/[\w-]+/, 'attribute.name'];
+  const g = erbMonarch<{ tokenPostfix: string; tokenizer: Record<string, unknown[]> }>({ tokenPostfix: '.html', tokenizer: { root: [[/[^<]+/, '']], tag: [tag] } });
+  const opener = (rules: unknown[]) => (rules.find(r => (r as any[])[1]?.nextEmbedded === 'ruby') as [RegExp])[0];
+  for (const state of ['root', 'tag']) for (const s of ['<%', '<%=', '<%-']) assert.strictEqual(opener(g.tokenizer[state]).exec(s)?.[0], s);
+  assert.strictEqual(g.tokenizer.tag.at(-1), tag); // HTML rules kept, after the ERB ones
+  assert.strictEqual((g.tokenizer.root[1] as [RegExp])[0].exec('<%# x %>')?.[0], '<%#'); // comment wins over <%
+  // A leading `end` would pop an empty Ruby stack: taken as a keyword before the Ruby opener, the rest of the tag goes to Ruby.
+  const end = g.tokenizer.root[0] as [RegExp, unknown[]];
+  for (const [s, m] of [['<% end %>', '<% end'], ['<% end -%>', '<% end'], ['<%- end %>', '<%- end'], ['<%end%>', '<%end'], ['<% end.join %>', '<% end'], ['<% end; x %>', '<% end']]) assert.strictEqual(end[0].exec(s)?.[0], m);
+  for (const s of ['<% end_at %>', '<% ending %>', '<% x.end %>', '<%= x %>', '<% else %>']) assert.strictEqual(end[0].exec(s), null);
+  assert.deepStrictEqual(end[1], ['metatag.erb', '', { token: 'keyword', next: '@erbRuby', nextEmbedded: 'ruby' }]);
+  const close = (g.tokenizer.erbRuby[0] as [RegExp, { nextEmbedded: string }]);
+  assert.deepStrictEqual(['%>', '-%>'].map(s => close[0].exec(s)?.[0]), ['%>', '-%>']);
+  assert.strictEqual(close[1].nextEmbedded, '@pop');
+  assert.strictEqual(g.tokenPostfix, '.html');
+});
+
+test('hover fallback shows the definition line and the comments right above it', () => {
+  const src = 'module PostsHelper\r\n  # Badge for a post.\r\n  # Second line.\r\n  def post_badge(post)\r\n  end\r\n\r\n  def other; end\r\nend';
+  assert.deepStrictEqual(defSignature(src, 3), { signature: 'def post_badge(post)', doc: 'Badge for a post.\nSecond line.' });
+  assert.deepStrictEqual(defSignature(src, 6), { signature: 'def other; end', doc: '' });
+  assert.strictEqual(defSignature(src, 5), undefined);
+  assert.strictEqual(defSignature(src, 99), undefined);
 });
 
 test('relativeTo ignores drive-letter case and rejects outside paths', () => {

@@ -1,8 +1,8 @@
 // Minimal LSP client: Ruby LSP (stdio, via main process) <-> Monaco providers.
 import type * as M from 'monaco-editor';
-import { api, notify as toast } from './dom.ts';
+import { api, notify as toast, ws } from './dom.ts';
 import * as Features from './features.ts';
-import { blockClosed, ipcMessage } from './paths.ts';
+import { blockClosed, defSignature, ipcMessage, relativeTo } from './paths.ts';
 
 type Pos = { line: number; character: number };
 type LRange = { start: Pos; end: Pos };
@@ -66,7 +66,8 @@ export const filesChanged = (changes: (readonly [path: string, type: 1 | 3])[]) 
 let onType: M.IDisposable | undefined;
 const ask = <T = any>(feature: string, method: string, params: unknown): Promise<T | null> => {
   const uri = (params as { textDocument?: { uri?: string } })?.textDocument?.uri;
-  return Features.on(feature) && ready && (uri === undefined || uri.startsWith('file:')) ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
+  const erbOff = uri !== undefined && !Features.on('erb') && monaco.editor.getModel(monaco.Uri.parse(uri))?.getLanguageId() === 'erb';
+  return Features.on(feature) && ready && !erbOff && (uri === undefined || uri.startsWith('file:')) ? request<T>(method, params).catch(() => null) : Promise.resolve(null);
 };
 
 function rejectPending(reason: string) {
@@ -150,9 +151,22 @@ function symbols(list: any[] | null | undefined): M.languages.DocumentSymbol[] {
   });
 }
 
+// ruby-lsp has no hover for some methods it can still jump to (view helpers): show the target's `def` line and comments.
+async function definitionHover(params: { textDocument: { uri: string }; position: Pos }): Promise<M.languages.Hover | null> {
+  const res = await ask('hover', 'textDocument/definition', params);
+  const l = Array.isArray(res) ? res[0] : res;
+  if (!l) return null;
+  const file = monaco.Uri.parse(l.targetUri ?? l.uri).fsPath, line = (l.targetSelectionRange ?? l.targetRange ?? l.range).start.line;
+  const sig = defSignature(await api.readFile(file).catch(() => ''), line);
+  if (!sig) return null;
+  const where = `${relativeTo(ws.root, file) ?? file}:${line + 1}`;
+  return { contents: [{ value: '```ruby\n' + sig.signature + '\n```' }, ...sig.doc ? [{ value: sig.doc.replace(/\n/g, '  \n') }] : [], { value: where }] };
+}
+
 export function registerProviders() {
-  const L = monaco.languages, id = 'ruby';
-  L.registerCompletionItemProvider(id, {
+  // ruby-lsp answers these inside ERB tags too; the rest (references, rename, formatting...) is Ruby only.
+  const L = monaco.languages, id = 'ruby', erb = ['ruby', 'erb'];
+  L.registerCompletionItemProvider(erb, {
     triggerCharacters: ['.', ':', '@', '/', '"'],
     async provideCompletionItems(model, position) {
       const res = await ask('completion', 'textDocument/completion', { textDocument: doc(model), position: pos(position) });
@@ -178,15 +192,15 @@ export function registerProviders() {
       return item;
     },
   });
-  L.registerHoverProvider(id, {
+  L.registerHoverProvider(erb, {
     async provideHover(model, position) {
-      const r = await ask('hover', 'textDocument/hover', { textDocument: doc(model), position: pos(position) });
-      if (!r) return null;
-      const contents = (Array.isArray(r.contents) ? r.contents : [r.contents]).map(markdown).filter((c: unknown): c is { value: string } => !!c);
-      return { contents, range: r.range && range(r.range) };
+      const params = { textDocument: doc(model), position: pos(position) };
+      const r = await ask('hover', 'textDocument/hover', params);
+      const contents = r ? (Array.isArray(r.contents) ? r.contents : [r.contents]).map(markdown).filter((c: unknown): c is { value: string } => !!c) : [];
+      return contents.length ? { contents, range: r.range && range(r.range) } : definitionHover(params);
     },
   });
-  L.registerSignatureHelpProvider(id, {
+  L.registerSignatureHelpProvider(erb, {
     signatureHelpTriggerCharacters: ['(', ','],
     async provideSignatureHelp(model, position) {
       const r = await ask('signatureHelp', 'textDocument/signatureHelp', { textDocument: doc(model), position: pos(position) });
@@ -198,13 +212,13 @@ export function registerProviders() {
       return { value: { signatures, activeSignature: r.activeSignature ?? 0, activeParameter: r.activeParameter ?? 0 }, dispose() {} };
     },
   });
-  L.registerDefinitionProvider(id, {
+  L.registerDefinitionProvider(erb, {
     provideDefinition: async (model, position) => locations(await ask('definition', 'textDocument/definition', { textDocument: doc(model), position: pos(position) })),
   });
   L.registerReferenceProvider(id, {
     provideReferences: async (model, position, context) => locations(await ask('references', 'textDocument/references', { textDocument: doc(model), position: pos(position), context })),
   });
-  L.registerDocumentHighlightProvider(id, {
+  L.registerDocumentHighlightProvider(erb, {
     async provideDocumentHighlights(model, position) {
       const r = await ask<any[]>('documentHighlight', 'textDocument/documentHighlight', { textDocument: doc(model), position: pos(position) });
       return (r ?? []).map(x => ({ range: range(x.range), kind: (x.kind ?? 1) - 1 }));
@@ -348,7 +362,7 @@ export async function start(root: string, command: string, h: Hooks) {
 function registerSemanticTokens(legend: M.languages.SemanticTokensLegend | undefined) {
   if (!legend || semanticRegistered) return;
   semanticRegistered = true;
-  monaco.languages.registerDocumentSemanticTokensProvider('ruby', {
+  monaco.languages.registerDocumentSemanticTokensProvider(['ruby', 'erb'], {
     getLegend: () => legend,
     async provideDocumentSemanticTokens(model) {
       const r = await ask<{ data: number[]; resultId?: string }>('semanticHighlighting', 'textDocument/semanticTokens/full', { textDocument: doc(model) });
@@ -417,13 +431,13 @@ function scheduleDiagnostics(model: M.editor.ITextModel) {
 
 function sendOpen(model: M.editor.ITextModel) {
   if (!ready) return;
-  notify('textDocument/didOpen', { textDocument: { ...doc(model), languageId: 'ruby', version: model.getVersionId(), text: model.getValue() } });
+  notify('textDocument/didOpen', { textDocument: { ...doc(model), languageId: model.getLanguageId(), version: model.getVersionId(), text: model.getValue() } });
   void pullDiagnostics(model);
 }
 
 export function didOpen(model: M.editor.ITextModel) {
   const uri = model.uri.toString();
-  if (model.getLanguageId() !== 'ruby' || model.uri.scheme !== 'file' || opened.has(uri)) return;
+  if (!['ruby', 'erb'].includes(model.getLanguageId()) || model.uri.scheme !== 'file' || opened.has(uri)) return;
   opened.set(uri, model);
   // Monaco orders changes end-to-start, so they apply in sequence as LSP expects.
   listeners.set(uri, model.onDidChangeContent(e => {

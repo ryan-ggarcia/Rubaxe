@@ -4,7 +4,7 @@ import { $, api, basename, h, notify, ws } from './dom.ts';
 import { fileSvg } from './file-icons.ts';
 import * as Features from './features.ts';
 import * as Lsp from './lsp-client.ts';
-import { ipcMessage, languageFor, tabDescriptions } from './paths.ts';
+import { erbMonarch, ipcMessage, languageFor, tabDescriptions } from './paths.ts';
 
 export interface Tab {
   conflict?: string; // disk text that differs from this dirty tab (outside edit not yet decided on)
@@ -48,7 +48,24 @@ export function editorOptions(): M.editor.IEditorOptions {
   };
 }
 
+// ERB: HTML grammar + Ruby inside <% %>. HTML completions/hover come from Monaco's HTML service, Ruby ones from the Ruby LSP.
+// No HTML formatter: it would reflow the Ruby tags (and RuboCop only formats 'ruby').
+function registerErb() {
+  const L = monaco.languages;
+  L.register({ id: 'erb', aliases: ['ERB'] });
+  type Html = { conf: M.languages.LanguageConfiguration; language: M.languages.IMonarchLanguage };
+  const html = (L.getLanguages().find(l => l.id === 'html') as unknown as { loader(): Promise<Html> }).loader();
+  // No `<` `>` pair: the `>` of `%>` closed the `<` of `<%` past a Ruby `{` left open for the next tag, painting it unmatched.
+  void html.then(({ conf }) => L.setLanguageConfiguration('erb', { ...conf, brackets: conf.brackets?.filter(([o]) => o !== '<') }));
+  L.setMonarchTokensProvider('erb', html.then(({ language }) => erbMonarch(language)));
+  monaco.html.registerHTMLLanguageService('erb', undefined, { ...monaco.html.htmlDefaults.modeConfiguration, documentFormattingEdits: false, documentRangeFormattingEdits: false });
+  // Monaco picks the worker script by label (= language id): the 'erb' HTML service needs the HTML worker.
+  const env = self.MonacoEnvironment!, getWorker = env.getWorker!.bind(env);
+  env.getWorker = (id, label) => getWorker(id, label === 'erb' ? 'html' : label);
+}
+
 export function createEditor(settingsRenderer: (container: HTMLElement) => void, previewRenderer: (tab: Tab, container: HTMLElement) => void) {
+  registerErb();
   renderSettings = settingsRenderer;
   renderPreview = previewRenderer;
   editor = monaco.editor.create($('#editor'), {

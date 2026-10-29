@@ -193,7 +193,7 @@ export function initRails() {
     if (/[\\/]config[\\/]routes\.rb$/.test(path)) routes = undefined;
     if (/[\\/]config[\\/]locales[\\/]/.test(path)) i18n = undefined;
   });
-  for (const lang of ['ruby', 'html']) monaco.languages.registerCompletionItemProvider(lang, {
+  for (const lang of ['ruby', 'erb']) monaco.languages.registerCompletionItemProvider(lang, {
     triggerCharacters: ["'", '"', '.'],
     async provideCompletionItems(model, position) {
       if (!ws.isRails || !Features.on('railsRoutes')) return { suggestions: [] };

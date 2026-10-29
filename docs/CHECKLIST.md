@@ -143,7 +143,9 @@ Tudo é implementado do zero, em processo clean room: a pesquisa coletou apenas 
 - [x] Navegar Model ↔ Controller ↔ View ↔ Helper ↔ Layout ↔ Routes ↔ Schema (Shift+Alt+R; da view vai para a action, do model para o `create_table`)
 - [x] Executar generators (model, controller, scaffold, migration…) e desfazer (`rails destroy`); db:migrate/rollback/seed
 - [x] Rails server (terminal integrado; Ctrl+C para, Shift+F2 não mata) e Rails console (terminal integrado)
-- [x] Completar rotas (`_path`/`_url` de `bin/rails routes`) e chaves i18n (`t('…')` de `config/locales`); views `.erb` com realce HTML
+- [x] Completar rotas (`_path`/`_url` de `bin/rails routes`) e chaves i18n (`t('…')` de `config/locales`), também nas views `.erb`
+- [x] Views ERB (`erb`, 28/10/2026): linguagem própria no Monaco, realce HTML com Ruby dentro de `<% %>`/`<%= %>`/`<%- -%>` e comentário `<%# %>`; completar/documentação de HTML pelo serviço HTML do Monaco (worker HTML) e, dentro das tags, completar, documentação, assinatura, definição, destaque e realce semântico do Ruby LSP (`languageId: erb`). Sem formatação, RuboCop, `end` automático nem diagnósticos em `.erb`. Limite: Ruby dentro de valor de atributo (`class="<%= x %>"`) completa, mas fica com a cor do atributo.
+- [x] HTML, CSS/SCSS/LESS, JavaScript/TypeScript e JSON: completar, documentação, erros e Shift+Alt+F pelos serviços nativos do Monaco (já funcionavam; conferido no app em 28/10/2026). Formatar ao salvar continua só para Ruby: os formatadores de HTML/CSS/JSON do Monaco removem a quebra de linha final.
 - [x] Rename que entende Rails ("Rails: Renomear Recurso..."): model, controller, helper, pasta de views e testes/specs + constantes via Ruby LSP; pré-visualização com confirmação; `routes.rb` e migrations só listados para revisão manual
 
 ### Fase 10 — Recursos avançados do RubyMine
@@ -360,3 +362,13 @@ App de desenvolvimento com `--user-data-dir` isolado (conferido pelo main e na l
 - [x] Terminal novo segue a pasta aberta.
 - [x] Achados e corrigidos na rodada: desfoque de 40 px vencido pela regra do acrílico; `end` com corpo na coluna 0; cancelar "descartar alterações" ao abrir pasta fechava as abas limpas (agora pergunta antes de fechar qualquer uma); "Model is disposed!" nas intentions ao fechar abas.
 - [ ] Não testado: instalador real (`rubaxe.cmd` no PATH), material `none` real (foi simulado), Linux/macOS.
+
+## 13. ERB e linguagens web (28–29/10/2026)
+Diagnóstico: só o ERB estava quebrado (tratado como HTML puro e nunca enviado ao Ruby LSP); HTML/CSS/JS/JSON já funcionavam (workers do Monaco 0.57 já vêm configurados). App dev e empacotado com perfil isolado, `settings.json` real intacto, nada instalado. typecheck ok, 72/72 testes, build ok, clean room 0 ocorrências.
+- [x] App Rails real: `posts_path`/`posts_url`, chaves i18n em `t("`, `Post.fi` (Ruby LSP), tags HTML, hover com schema (ruby-lsp-rails), F12 em model e helper; sem `end` automático, Ctrl+S com formatar ao salvar e a espera de 4 s não alteram o `.erb`; "Views ERB" liga/desliga o Ruby LSP no ERB.
+- [x] App empacotado (`--dir`): worker HTML carrega do `app.asar` (tags no `.erb`, propriedades no `.css`), Ruby LSP e rotas no `.erb`.
+- [x] Não é regressão: `u = User.new` + `u.` num `.rb` dá o mesmo na v0.2.9. O Ruby LSP não deduz tipo por atribuição, parâmetro de bloco (`post.` no `each`) nem variável de instância (`@post.`); só adivinha pelo nome (`user.` → `User`).
+- [x] `<% end %>` (e `-%>`, `<%-`) sem cor e com "trying to pop an empty stack" no console: corrigido com regra própria em `erbMonarch`.
+- [x] `<% end.join %>`/`<% end; x %>`: o `end` inicial vira palavra-chave e o resto da tag vai para o Ruby. `{`/`}` de bloco dividido entre tags não ficam mais vermelhos (o ERB não tem o par `<` `>`, que fechava o `<%` no `%>`). Hover vazio do ruby-lsp (helper): mostra a linha `def` do destino da definição, comentários `#` acima e `caminho:linha`.
+- [ ] Limites: `<% x.end %>` ainda dá o erro de tokenização (gramática Ruby do Monaco); Ruby dentro de atributo fica com a cor do atributo; `.js.erb`/`.yml.erb` usam o realce de HTML; aviso repetido "[suggest] did IGNORE invalid completion item" no console ao digitar `<%= x.`. SCSS e TypeScript não testados (mesmos workers do CSS/JS).
+- [ ] Commit e Release v0.2.10.

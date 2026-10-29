@@ -36,8 +36,31 @@ export function fuzzyScore(query: string, text: string): number {
 
 export function languageFor(file: string): string | undefined {
   const base = file.split(/[\\/]/).pop()!;
-  if (base.endsWith('.erb')) return 'html'; // Rails views: HTML highlighting is closer than plain text
+  if (base.endsWith('.erb')) return 'erb'; // HTML with Ruby in <% %> (registered in editor.ts)
   return RUBY_NAMES.has(base) || RUBY_EXT.test(base) ? 'ruby' : undefined;
+}
+
+// ERB Monarch grammar from Monaco's HTML one: in every HTML state `<% %>` hands over to the Ruby tokenizer, `<%# %>` is a comment.
+// A leading `end` (`<% end %>`, `<% end.join %>`) is tokenized here, the rest of the tag goes to Ruby: each `<% %>` starts Ruby
+// with an empty stack and its `end` rule pops (console error, no color).
+export function erbMonarch<T extends { tokenizer: Record<string, unknown[]> }>(html: T): T {
+  const ruby = { next: '@erbRuby', nextEmbedded: 'ruby' };
+  const erb = [[/(<%-?)(\s*)(end\b)/, ['metatag.erb', '', { token: 'keyword', ...ruby }]], [/<%#/, 'comment.erb', '@erbComment'], [/<%[=-]?/, { token: 'metatag.erb', ...ruby }]];
+  const tokenizer = Object.fromEntries(Object.entries(html.tokenizer).map(([state, rules]) => [state, [...erb, ...rules]]));
+  return { ...html, tokenizer: {
+    ...tokenizer,
+    erbRuby: [[/-?%>/, { token: 'metatag.erb', next: '@pop', nextEmbedded: '@pop' }], [/[^%-]+|./, '']],
+    erbComment: [[/-?%>/, 'comment.erb', '@pop'], [/[^%-]+|./, 'comment.erb']],
+  } };
+}
+
+// Hover fallback when ruby-lsp has none: the definition line (0-based `line`) and the `#` comments right above it.
+export function defSignature(text: string, line: number): { signature: string; doc: string } | undefined {
+  const lines = text.split(/\r?\n/), signature = lines[line]?.trim();
+  if (!signature) return undefined;
+  let top = line;
+  while (top > 0 && /^\s*#/.test(lines[top - 1])) top--;
+  return { signature, doc: lines.slice(top, line).map(l => l.replace(/^\s*#\s?/, '')).join('\n') };
 }
 
 // Windows paths compare case-insensitively; Monaco also lowercases the drive letter.

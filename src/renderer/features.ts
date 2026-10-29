@@ -55,6 +55,7 @@ const LIST: [string, [id: string, label: string, status: Status][]][] = [
     ['railsNav', 'Navegar Model ↔ Controller ↔ View ↔ Helper', 'ok'],
     ['railsGenerators', 'Generators, servidor e migrations', 'ok'],
     ['railsRoutes', 'Completar rotas (_path/_url) e chaves i18n', 'ok'],
+    ['erb', 'Views ERB: Ruby LSP dentro de <% %> (completar, documentação, F12)', 'ok'],
   ]],
   ['Ferramentas', [
     ['git', 'Git: status, diff, stage, commit, blame, branches', 'ok'],
