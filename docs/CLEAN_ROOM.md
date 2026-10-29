@@ -45,6 +45,10 @@ os dois papéis devem ser pessoas (ou agentes) diferentes.
 | 2026-10-19 | RubyMine | 2026.2.3 | Inventário ZIP via REA (`inspect_artifact`), sem descompilação | Lista de entradas de `intellij.ruby.backend.jar` (4.834) |
 | 2026-10-19 | RubyMine | 2026.2.3 | Script Python lendo `plugin.xml` e `.properties` dos JARs do plugin Ruby | Ações (115), inspeções (115), intentions (53), extension points, páginas de configuração, chaves de opções |
 | 2026-10-19 | VS Code | 1.142.0 | REA `analyze_javascript_application` + regex no bundle; leitura dos `package.json` das extensões | IDs de comandos (1.228 do núcleo, 520 das extensões), contribuições, cores do tema Dark Modern |
+| 2026-10-29 | RubyMine | 2026.2 (ajuda) | Leitura da ajuda pública e da API REST pública do YouTrack (projeto RUBY), sem abrir a instalação | Páginas *Rails navigation*, *Code insight*, *Rails \| Paths*, a página da refatoração que extrai partial; ~45 issues sobre `@variáveis`, helpers e locals em views |
+| 2026-10-29 | Ruby LSP / ruby-lsp-rails | 0.26.11 / 0.4.8 | Leitura do código-fonte MIT das gems instaladas, da documentação pública e de issues/PRs no GitHub | Inferência de tipo e completar em ERB; ruby-lsp#2235, ruby-lsp-rails#659, #694, #734 |
+| 2026-10-29 | Solargraph, solargraph-rails, Herb | — | README e issues/PRs públicos no GitHub | Suporte a `.erb` (ausente no Solargraph); completar e análise de templates do Herb |
+| 2026-10-29 | Rails | guias atuais | Guias *Layouts and Rendering*, *Action View Overview* e API *ActionController::Helpers* | Render implícito, herança de templates, helpers, partials, `local_assigns`, strict locals |
 
 As extrações brutas ficaram fora do repositório e não são versionadas.
 
